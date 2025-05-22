@@ -1,0 +1,10 @@
+POST 
+http://localhost:9000/register
+Content-Type: application/json
+
+{
+  "name": "Alice Manager",
+  "email": "freelancerproject25@gmail.com",
+  "password": "StrongPassword123!",
+  "organizationName": "Alice Co"
+}
