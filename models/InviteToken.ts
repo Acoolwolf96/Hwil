@@ -6,6 +6,7 @@ export interface IInviteToken extends Document {
   organizationId: mongoose.Types.ObjectId;
   expiresAt: Date;
   used: boolean;
+  createdBy: mongoose.Types.ObjectId;
 }
 
 
@@ -30,6 +31,11 @@ const InviteTokenSchema: Schema<IInviteToken> = new Schema({
   used: {
     type: Boolean,
     default: false,
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
   },
 });
 

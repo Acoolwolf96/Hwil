@@ -29,6 +29,7 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
             token,
             organizationId: user.organizationId,
             expiresAt,
+            createdBy: user.id,
         });
 
         // Get organization name for email

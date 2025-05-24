@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 
 export interface IShift extends Document {
+    name: string;
   organizationId: mongoose.Types.ObjectId;
   assignedTo: mongoose.Types.ObjectId;
   date: Date;
@@ -9,18 +10,26 @@ export interface IShift extends Document {
     endTime: string;
     role?: string;
     location?: string;
-    status: "assigned" | "open" | "completed" | "cancelled" | "missed";
-    punchInTime?: Date;
-    punchOutTime?: Date;
+    status: "assigned" | "open" | "completed" | "cancelled" | "missed" | "in-progress";
+    clockInTime?: Date;
+    clockOutTime?: Date;
     workedHours?: number;
     isOpen?: boolean;
+    reminderSent?: boolean;
+    // The user who created the shift
     createdBy: mongoose.Types.ObjectId;
     notes?: string;
+    ApprovalStatus?: "pending" | "approved" | "rejected";
+ 
     createdAt: Date;
     updatedAt: Date;
 }
 
 const ShiftSchema: Schema<IShift> = new Schema({
+    name: {
+        type: String,
+        required: true,
+    },
     organizationId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Organization",
@@ -51,13 +60,13 @@ const ShiftSchema: Schema<IShift> = new Schema({
     },
     status: {
         type: String,
-        enum: ["assigned", "open", "completed", "cancelled", "missed"],
+        enum: ["assigned", "open", "completed", "cancelled", "missed", "in-progress"],
         default: "assigned",
     },
-    punchInTime: {
+    clockInTime: {
         type: Date,
     },
-    punchOutTime: {
+    clockOutTime: {
         type: Date,
     },
     workedHours: {
@@ -68,6 +77,10 @@ const ShiftSchema: Schema<IShift> = new Schema({
         type: Boolean,
         default: false,
     },
+    reminderSent: {
+        type: Boolean,
+        default: false,
+    },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -75,9 +88,14 @@ const ShiftSchema: Schema<IShift> = new Schema({
     },
     notes: {
         type: String,
-    }
+    },
+    ApprovalStatus: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "pending",
+    },
 }, { timestamps: true }
 );
 
 
-export default mongoose.model<IShift>("Shift", ShiftSchema);
+export const Shift = mongoose.model<IShift>("Shift", ShiftSchema);

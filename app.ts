@@ -11,6 +11,7 @@ import usersRouter from './routes/users';
 import { register, login } from './controllers/authControllers';
 import notificationsRouter from './routes/notifications';
 import inviteRouter from './routes/invite';
+import shiftRouter from './routes/shifts';
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/users', usersRouter);
 app.use('/notifications', notificationsRouter);
 app.use('/invites', inviteRouter);
+app.use('/shifts', shiftRouter);
 
 app.post('/login', login);
 app.post('/register', register);

@@ -13,7 +13,9 @@ const transporter = nodemailer.createTransport({
 interface EmailPayload {
     to: string;
     subject: string;
-    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff';
+    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff' | 'shift_reminder';
+    // context is an object that contains dynamic data for the email template
+    // e.g. { username: 'John
     context: Record<string, any>
 }
 
@@ -32,6 +34,11 @@ export async function sendEmail({to, subject, template, context}: EmailPayload) 
             break
         case 'invite_staff':
             html = `<p>Hello ${context.username}, you have been invited to join ${context.Organization} on Hwil System. Click <a href="${context.inviteLink}" >here</a> to complete your registeration.</p>`;
+            break;
+        case 'shift_reminder':
+            html = `<p>Hi ${context.username}, this is a reminder for your upcoming shift on ${context.date} from ${context.startTime} to ${context.endTime}. Location: ${context.location}.</p>
+            <p>Please make sure to arrive on time.</p>
+            <p>- Hwil Team</p>`;
             break;
         default:
             throw new Error('Invalid email template');
