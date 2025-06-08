@@ -13,7 +13,7 @@ const router = express.Router();
 router.post('/add', authMiddleware, createShift);
 
 // Route to get all shifts
-router.get('/', authMiddleware, getShifts);
+router.get('/getall', authMiddleware, getShifts);
 
 // Route to get a specific shift by ID
 router.get('/:id', authMiddleware, getShiftById);
@@ -50,6 +50,8 @@ router.post('/upload', authMiddleware, upload.single('file'), uploadShiftFromSpr
 
 // Route to approve a shift
 router.patch('/:id/approve', authMiddleware, approveShift);
+
+
 
 
 

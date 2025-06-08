@@ -6,6 +6,8 @@ import { generateAccessToken, generateRefreshToken } from '../utils/jwt';
 import { sendEmail } from '../utils/email';
 import { Staff } from '../models/Staff';
 import { InviteToken } from '../models/InviteToken';
+import { Invite } from '../models/Invites';
+
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
 
@@ -118,6 +120,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     });
 
     res.status(200).json({ 
+      user: {
+        id: user.id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
         message: "Logged in Successfully",
         accessToken,
         refreshToken,
@@ -147,7 +155,7 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
       return;
     }
 
-    const invite = await InviteToken.findOne({ token });
+    const invite = await InviteToken.findOneAndDelete({ token });
 
     if (!invite){
       res.status(400).json({ message: 'Invalid invite token' });
@@ -158,11 +166,6 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
       res.status(400).json({ message: 'Invite token has expired' });
       return;
     }
-
-    if (invite.used) {
-      res.status(400).json({ message: 'Invite token has already been used' });
-      return;
-    } 
 
     const existingUser = await User.findOne({ email: invite.email });
     if (existingUser) {
@@ -186,8 +189,11 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
 
     await staff.save();
 
-    invite.used = true;
-    await invite.save();
+    // Update the invite status
+    await Invite.updateOne(
+      { email: invite.email },
+      { $set: { stage: 'accepted' } }
+    );
 
 
     const payload = {
@@ -221,6 +227,25 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
 }
 
 
+export const getAllStaffInOrg = async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    
+    // Add null check for req.user
+    if (!user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+
+    const { organizationId } = req.user; // Now safe to destructure
+
+    const staffList = await Staff.find({ organizationId }).select('_id name email');
+    res.status(200).json(staffList);
+  } catch (error) {
+    console.error('Failed to get staff list:', error);
+    res.status(500).json({ message: 'Failed to get staff list' });
+  }
+};
 
 
 

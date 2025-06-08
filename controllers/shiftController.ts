@@ -15,9 +15,9 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
             return;
         }
 
-        const { name, assignedTo, date, startTime, endTime, role, location, notes } = req.body;
+        const { name, date, startTime, endTime, location, notes } = req.body;
 
-        if (!name || !assignedTo || !date || !startTime || !endTime) {
+        if (!name || !date || !startTime || !endTime) {
             res.status(400).json({ message: 'Missing required fields' });
             return;
         }
@@ -25,11 +25,9 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
         const shift = await Shift.create({
             name,
             organizationId: user.organizationId,
-            assignedTo,
             date: new Date(date),
             startTime,
             endTime,
-            role,
             location,
             notes,
             status: 'assigned',
@@ -95,14 +93,14 @@ export const getShiftById = async (req: Request, res: Response, next: NextFuncti
         }
 
 
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
 
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
 
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
@@ -129,13 +127,13 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -176,13 +174,13 @@ export const deleteShift = async (req: Request, res: Response, next: NextFunctio
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -212,13 +210,13 @@ export const markShiftAsCompleted = async (req: Request, res: Response, next: Ne
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -242,13 +240,13 @@ export const markShiftAsMissed = async (req: Request, res: Response, next: NextF
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -272,13 +270,13 @@ export const markShiftAsCancelled = async (req: Request, res: Response, next: Ne
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -302,13 +300,13 @@ export const markShiftAsOpen = async (req: Request, res: Response, next: NextFun
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -332,13 +330,13 @@ export const markShiftAsClosed = async (req: Request, res: Response, next: NextF
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
         //Allow if
-        // -User is a manager in the same organization
+        // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
         const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
@@ -405,7 +403,7 @@ export const claimOpenShift = async (req: Request, res: Response, next: NextFunc
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
@@ -418,7 +416,6 @@ export const claimOpenShift = async (req: Request, res: Response, next: NextFunc
             return;
         }
 
-        shift.assignedTo = user.id;
         shift.status = 'assigned';
         shift.isOpen = false;
 
@@ -465,7 +462,7 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             return;
         }
 
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
@@ -500,7 +497,7 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 }
 
 
-export const clockOutShift = async (req: Request, res: Response, next: NextFunction) => {
+export const clockOutShift = async (req: Request, res: Response) => {
     try{
         const user = req.user
         if(user.role !== 'staff') {
@@ -513,7 +510,7 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
@@ -555,62 +552,98 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
 }
 
 
-
-export const uploadShiftFromSpreadsheet = async (req: Request, res: Response, next: NextFunction) => {
+export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) => {
     try {
         const user = req.user;
-        if (user.role !== 'manager') {
-            res.status(403).json({ message: 'Forbidden, Only managers can upload shifts from spreadsheet' });
+        
+        if (!user || user.role !== 'manager') {
+            res.status(403).json({ message: 'Forbidden: Only managers can upload shifts' });
             return;
         }
 
-        const fileBuffer = req.file?.buffer;
-        if (!fileBuffer) {
+        if (!req.file) {
             res.status(400).json({ message: 'No file uploaded' });
             return;
         }
 
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const data = xlsx.utils.sheet_to_json(sheet);
+        const workbook = xlsx.read(req.file.buffer);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = xlsx.utils.sheet_to_json(worksheet);
 
-        const shiftsToInsert = []
-
-
-        for (const row of data as any) {
-            const { staffEmail, assignedTo, date, startTime, endTime, role, location, notes } = row;
-
-            const staff = await Staff.findOne({ email: staffEmail, organizationId: user.organizationId });
-            if (!staff) {
-                console.warn(`Staff member with email ${staffEmail} not found, skipping row`);
-                continue;
-            }
-
-            shiftsToInsert.push({
-                organizationId: user.organizationId,
-                assignedTo: staff._id,
-                date: new Date(date),
-                startTime,
-                endTime,
-                role,
-                location,
-                notes,
-                status: 'assigned',
-                createdBy: user.id,
-            });
+        if (!data.length) {
+            res.status(400).json({ message: 'No data found in spreadsheet' });
+            return;
         }
 
+        const shiftsToInsert = [];
+        const errors = [];
 
-        await Shift.insertMany(shiftsToInsert);
-        res.status(201).json({ message: 'Shifts uploaded successfully', shifts: shiftsToInsert.length });
+        for (const [index, row] of data.entries()) {
+            try {
+                const { staffEmail, date, startTime, endTime, role, location, notes } = row as any;
+
+                if (!staffEmail || !date || !startTime || !endTime) {
+                    errors.push(`Row ${index + 2}: Missing required fields`);
+                    continue;
+                }
+
+                const staff = await Staff.findOne({
+                    email: staffEmail,
+                    organizationId: user.organizationId
+                });
+
+                if (!staff) {
+                    errors.push(`Row ${index + 2}: Staff with email ${staffEmail} not found`);
+                    continue;
+                }
+
+                shiftsToInsert.push({
+                    organizationId: user.organizationId,
+                    assignedTo: staff._id,
+                    date: new Date(date),
+                    startTime,
+                    endTime,
+                    role: role || 'staff',
+                    location: location || 'Main Location',
+                    notes: notes || '',
+                    status: 'assigned',
+                    createdBy: user.id,
+                });
+            } catch (err) {
+                if (err instanceof Error) {
+                    errors.push(`Row ${index + 2}: ${err.message}`);
+                } else {
+                    errors.push(`Row ${index + 2}: Error processing row`);
+                }
+            }
+        }
+
+        if (shiftsToInsert.length === 0) {
+            res.status(400).json({ 
+                message: 'No valid shifts to import',
+                errors 
+            });
+            return;
+        }
+
+        const result = await Shift.insertMany(shiftsToInsert);
+
+        res.status(201).json({ 
+            message: 'Shifts uploaded successfully',
+            shifts: result.length,
+            errors: errors.length > 0 ? errors : undefined
+        });
+
     } catch (error) {
-        console.error('Error uploading shifts from spreadsheet:', error);
+        console.error('Error uploading shifts:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-}
+};
 
 
-export const approveShift = async (req: Request, res: Response, next: NextFunction) => {
+
+export const approveShift = async (req: Request, res: Response) => {
     try{
         const { id } = req.params;
         const manager = req.user;
@@ -626,7 +659,7 @@ export const approveShift = async (req: Request, res: Response, next: NextFuncti
             return;
         }
 
-        //Prevent  access across organizations
+        //Prevent access across organizations
         if (shift.organizationId.toString() !== manager.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;

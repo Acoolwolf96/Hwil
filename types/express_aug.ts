@@ -1,4 +1,4 @@
-import { JwtPayload } from '../utils/token';
+import { JwtPayload } from '../utils/jwt';
 
 declare global {
     namespace Express {

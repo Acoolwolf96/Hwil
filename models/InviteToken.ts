@@ -27,6 +27,7 @@ const InviteTokenSchema: Schema<IInviteToken> = new Schema({
   expiresAt: {
     type: Date,
     required: true,
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   },
   used: {
     type: Boolean,

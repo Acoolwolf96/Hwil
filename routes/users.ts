@@ -1,6 +1,7 @@
 import express from 'express';
 import { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { getAllStaffInOrg } from '../controllers/authControllers';
 import { User } from '../models/User';
 import bcrypt from 'bcrypt';
 
@@ -58,5 +59,7 @@ router.post('/add', authMiddleware, async (req: Request, res: Response): Promise
     }
 });
 
+// GET /users/staff – Get all staff in the logged-in manager's org
+router.get('/staff', authMiddleware, getAllStaffInOrg);
 
 export default router;

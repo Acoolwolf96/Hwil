@@ -3,26 +3,28 @@ import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import logger from 'morgan';
+import cors from 'cors';
+import { authMiddleware } from './middleware/auth';
 
 
+import './types/express_aug';
 
 // Import routes
 import usersRouter from './routes/users';
-import { register, login } from './controllers/authControllers';
+import { register, login, getAllStaffInOrg } from './controllers/authControllers';
+import { loginSchema, registerSchema } from "./validation/authSchema";
+import { validateRequest } from "./middleware/validateRequest";
 import notificationsRouter from './routes/notifications';
 import inviteRouter from './routes/invite';
 import shiftRouter from './routes/shifts';
 
 const app = express();
 
-
-
-
-
-
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'ejs');
+// CORS configuration
+app.use(cors({
+  origin: 'http://localhost:5173', // Update with frontend URL
+  credentials: true
+}));
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -31,38 +33,35 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 
+const apiRouter = express.Router();
 
+apiRouter.use('/users', usersRouter);
+apiRouter.use('/notifications', notificationsRouter);
+apiRouter.use('/invites', inviteRouter);
+apiRouter.use('/shifts', shiftRouter);
+apiRouter.post('/login', validateRequest(loginSchema), login);
+apiRouter.post('/register', validateRequest(registerSchema), register);
+apiRouter.get('/staff', authMiddleware, getAllStaffInOrg); 
 
-
-
-
-// Use routes
-app.use('/users', usersRouter);
-app.use('/notifications', notificationsRouter);
-app.use('/invites', inviteRouter);
-app.use('/shifts', shiftRouter);
-
-app.post('/login', login);
-app.post('/register', register);
-
+app.use('/v4', apiRouter); // Mount the grouped routes
 
 // catch 404 and forward to error handler
 app.use((_req: Request, _res: Response, next: NextFunction) => {
   next(createError(404));
 });
 
-// error handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-  // render the error page
-  res.status(err.status || 500);  
-  res.render('error', { title: 'Error' });
-
+// Add headers
+app.use((req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
+  next();
 });
 
-
+// error handler
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  res.status(err.status || 500).json({
+    message: err.message,
+    error: req.app.get('env') === 'development' ? err : {}
+  });
+});
 
 export default app;

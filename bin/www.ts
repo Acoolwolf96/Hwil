@@ -3,7 +3,7 @@
 import app from '../app';
 import http from 'http';
 import dotenv from 'dotenv';
-import { connectDB } from '../dbconfig'; // Adjust path as needed
+import { connectDB } from '../dbconfig'; 
 
 dotenv.config();
 
@@ -14,7 +14,7 @@ app.set('port', port);
 
 async function startServer() {
   try {
-    await connectDB();  // Connect to MongoDB first
+    await connectDB(); 
     const server = http.createServer(app);
 
     server.listen(port);

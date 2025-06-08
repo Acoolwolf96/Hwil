@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import { Invite } from '../models/Invites';
 import { InviteToken } from '../models/InviteToken';
 import { sendEmail } from '../utils/email';
 import { Organization } from '../models/Organization';
@@ -20,6 +21,12 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
             return;
         }
 
+        await Invite.create({
+            name,
+            email,
+            stage: 'sent'
+        });
+
         const token = crypto.randomBytes(16).toString('hex');
         const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
@@ -37,7 +44,7 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
         const organizationName = org?.name || 'Hwil';
 
         // Construct invite link
-        const inviteLink = `${process.env.FRONTEND_URL}/register/staff?token=${token}`;
+        const inviteLink = `${process.env.FRONTEND_URL}/v4/register/staff?token=${token}`;
 
         // Send email
         await sendEmail({
@@ -56,4 +63,22 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
         console.error('Error sending invite:', error);
         res.status(500).json({ message: 'Error sending invite' });
     }
+};
+
+
+export const getInvites = async (req: Request, res: Response) => {
+  try {
+    const { name, email, stage} = req.query;
+    const filter: any = {};
+
+    if (name) filter.name = { $regex: new RegExp(name as string, 'i') };
+    if (email) filter.email = { $regex: new RegExp(email as string, 'i') };
+    if (stage) filter.stage = stage;
+    const invites = await Invite.find().sort({ createdAt: -1 }); 
+
+    res.status(200).json(invites);
+  } catch (error) {
+    console.error('Error fetching invites:', error);
+    res.status(500).json({ message: 'Failed to fetch invites' });
+  }
 };

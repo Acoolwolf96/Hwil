@@ -2,14 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { generateAccessToken, verifyAccessToken, verifyRefreshToken } from "../utils/jwt";
 import revokedToken from "../models/revokedToken";
 
-// Extend Express Request interface
-declare global {
-    namespace Express {
-        interface Request {
-            user?: any; 
-        }
-    }
-}
+
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const authHeader = req.headers.authorization;
@@ -17,21 +10,14 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
     // Check for Bearer token
     if (!authHeader?.startsWith("Bearer ")) {
-        res.status(401).json({ message: "Unauthorized - No token provided" });
+        res.status(401).json({ message: "Unauthorized - Token missing" });
         return;
     }
 
-    const token = authHeader.split(" ")[1];
+    const accessToken = authHeader.split(" ")[1];
 
     try {
-        // First check if token is revoked
-        const decoded = verifyAccessToken(token);
-        if (await isTokenRevoked(decoded.jti)) {
-            res.status(403).json({ message: "Token revoked" });
-            return;
-        }
-
-        req.user = decoded;
+        req.user = verifyAccessToken(accessToken);
         next();
         return;
     } catch (error: any) {
@@ -48,15 +34,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
                 // Generate new access token
                 const newAccessToken = generateAccessToken(payload);
-
-                // Set new token in header and response locals
-                res.setHeader("Authorization", `Bearer ${newAccessToken}`);
-                res.locals.newAccessToken = newAccessToken;
+                res.setHeader("Authorization", newAccessToken);
                 req.user = payload;
 
                 next();
                 return;
-            } catch {
+            } catch (refreshError: any){
                 res.status(403).json({ message: "Invalid refresh token" });
                 return;
             }

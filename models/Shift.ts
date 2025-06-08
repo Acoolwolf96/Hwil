@@ -38,7 +38,6 @@ const ShiftSchema: Schema<IShift> = new Schema({
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
-        required: true,
     },
     date: {
         type: Date,
