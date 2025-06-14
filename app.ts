@@ -11,7 +11,7 @@ import './types/express_aug';
 
 // Import routes
 import usersRouter from './routes/users';
-import { register, login, getAllStaffInOrg } from './controllers/authControllers';
+import { register, login, getAllStaffInOrg, forgotPassword, resetPassword, validateResetToken } from './controllers/authControllers';
 import { loginSchema, registerSchema } from "./validation/authSchema";
 import { validateRequest } from "./middleware/validateRequest";
 import notificationsRouter from './routes/notifications';
@@ -22,8 +22,9 @@ const app = express();
 
 // CORS configuration
 app.use(cors({
-  origin: 'http://localhost:5173', // Update with frontend URL
-  credentials: true
+  origin: process.env.FRONTEND_URL,
+  credentials: true,
+  exposedHeaders: ['X-New-Token', 'Authorization']
 }));
 
 app.use(logger('dev'));
@@ -41,6 +42,10 @@ apiRouter.use('/invites', inviteRouter);
 apiRouter.use('/shifts', shiftRouter);
 apiRouter.post('/login', validateRequest(loginSchema), login);
 apiRouter.post('/register', validateRequest(registerSchema), register);
+
+apiRouter.post('/forgot-password', forgotPassword);
+apiRouter.post('/reset-password', resetPassword);
+apiRouter.get('/validate-reset-token', validateResetToken);
 apiRouter.get('/staff', authMiddleware, getAllStaffInOrg); 
 
 app.use('/v4', apiRouter); // Mount the grouped routes

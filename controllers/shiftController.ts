@@ -7,39 +7,55 @@ import { Shift } from '../models/Shift';
 
 
 export const createShift = async (req: Request, res: Response, next: NextFunction) => {
-    try{
+    try {
         const user = req.user;
 
-        if(user.role !== 'manager') {
+        if (user.role !== 'manager') {
             res.status(403).json({ message: 'Forbidden, Only managers can create shifts' });
             return;
         }
 
-        const { name, date, startTime, endTime, location, notes } = req.body;
+        const { name, assignedTo, date, startTime, endTime, location, notes } = req.body;
 
         if (!name || !date || !startTime || !endTime) {
             res.status(400).json({ message: 'Missing required fields' });
             return;
         }
 
+        // Validate assignedTo is provided for non-open shifts
+        if (!assignedTo) {
+            res.status(400).json({ message: 'Staff member must be assigned to shift' });
+            return;
+        }
+
         const shift = await Shift.create({
             name,
             organizationId: user.organizationId,
+            assignedTo,
             date: new Date(date),
             startTime,
             endTime,
-            location,
+            location: location || 'Main Location',
             notes,
             status: 'assigned',
             isOpen: false,
             createdBy: user.id,
         });
-        res.status(201).json({ message: 'Shift created successfully', shift });
+
+        res.status(201).json({
+            message: 'Shift created successfully',
+            shift: {
+                ...shift.toObject(),
+                // Add any additional fields you want to return
+            }
+        });
     } catch (error) {
         console.error('Error creating shift:', error);
-        res.status(500).json({ message: 'Internal server error' });
+        res.status(500).json({
+            message: 'Internal server error', error
+        });
     }
-}
+};
 
 export const getShifts = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -80,45 +96,48 @@ export const getMyShift = async (req: Request, res: Response, next: NextFunction
 
 
 export const getShiftById = async (req: Request, res: Response, next: NextFunction) => {
-    try{
-        const user =req.user;
+    try {
+        const user = req.user;
         const { id } = req.params;
 
         const shift = await Shift.findById(id)
-
+            .populate('assignedTo', 'name email')
+            .populate('createdBy', 'name email');
 
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
 
-
-        //Prevent access across organizations
+        // Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
 
-        //Allow if
+        // Allow if:
         // User is a manager in the same organization
         // OR User is the assigned user
-
-        const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
-        const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
+        const isManager = user.role === 'manager';
+        const isAssignedStaff = shift.assignedTo && shift.assignedTo._id && 
+                               shift.assignedTo._id.toString() === user.id.toString();
 
         if (!isManager && !isAssignedStaff) {
             res.status(403).json({ message: 'Forbidden: You are not authorized to access this shift' });
             return;
         }
-        res.status(200).json({ shift });
+        
+        // Return the shift data in the expected format
+        res.status(200).json(shift); // Return shift directly, not wrapped in object
     
     } catch (error) {
         console.error('Error fetching shift by ID:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 }
+
 export const updateShift = async (req: Request, res: Response, next: NextFunction) => {
-    try{
+    try {
         const user = req.user;
         const { id } = req.params;
 
@@ -127,35 +146,27 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent access across organizations
-        if (shift.organizationId.toString() !== user.organizationId.toString()) {
-            res.status(403).json({ message: 'Forbidden: Different Organization' });
+
+        // Only managers can update shifts
+        if (user.role !== 'manager' || shift.organizationId.toString() !== user.organizationId.toString()) {
+            res.status(403).json({ message: 'Forbidden: Only managers can update shifts' });
             return;
         }
-        //Allow if
-        // User is a manager in the same organization
-        // OR User is the assigned user
-        const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
-        const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
-        if (!isManager && !isAssignedStaff) {
-            res.status(403).json({ message: 'Forbidden: You are not authorized to access this shift' });
-            return;
-        }
-        const { name, assignedTo, date, startTime, endTime, role, location, notes } = req.body;
-        if (!name || !assignedTo || !date || !startTime || !endTime) {
-            res.status(400).json({ message: 'Missing required fields' });
-            return;
-        }
+
+        const { staff, date, startTime, endTime, location, notes } = req.body;
+
+        // Update the shift
         const updatedShift = await Shift.findByIdAndUpdate(id, {
-            name,
-            assignedTo,
+            assignedTo: staff, // Note: frontend sends 'staff', not 'assignedTo'
             date: new Date(date),
             startTime,
             endTime,
-            role,
             location,
             notes,
-        }, { new: true });
+        }, { new: true })
+        .populate('assignedTo', 'name email')
+        .populate('createdBy', 'name email');
+
         res.status(200).json({ message: 'Shift updated successfully', shift: updatedShift });
     } catch (error) {
         console.error('Error updating shift:', error);
@@ -183,7 +194,7 @@ export const deleteShift = async (req: Request, res: Response, next: NextFunctio
         // User is a manager in the same organization
         // OR User is the assigned user
         const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
-        const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
+        const isAssignedStaff = shift.assignedTo && shift.assignedTo.toString() === user.id.toString();
         if (!isManager && !isAssignedStaff) {
             res.status(403).json({ message: 'Forbidden: You are not authorized to access this shift' });
             return;
@@ -201,35 +212,59 @@ export const deleteShift = async (req: Request, res: Response, next: NextFunctio
 
 
 export const markShiftAsCompleted = async (req: Request, res: Response, next: NextFunction) => {
-    try{
+    try {
         const user = req.user;
         const { id } = req.params;
+        const { completionNotes, actualEndTime } = req.body;
 
         const shift = await Shift.findById(id);
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent access across organizations
+        
+        // Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
-        //Allow if
-        // User is a manager in the same organization
-        // OR User is the assigned user
-        const isManager = user.role === 'manager' && shift.organizationId.toString() === user.organizationId.toString();
-        const isAssignedStaff = shift.assignedTo.toString() === user.id.toString();
-        if (!isManager && !isAssignedStaff) {
-            res.status(403).json({ message: 'Forbidden: You are not authorized to access this shift' });
+        
+        // Check if user is assigned to this shift
+        const isAssignedStaff = shift.assignedTo && shift.assignedTo.toString() === user.id.toString();
+        
+        if (!isAssignedStaff) {
+            res.status(403).json({ message: 'Forbidden: You are not assigned to this shift' });
             return;
         }
+
+        // Update shift to completed
+        shift.status = 'completed';
+        shift.ApprovalStatus = 'pending'; // Set approval to pending
+        shift.clockOutTime = new Date(); // Set clock out time
+        shift.notes = completionNotes ? `${shift.notes || ''}\nCompletion Notes: ${completionNotes}` : shift.notes;
+        
+        // Calculate worked hours if clockInTime exists
+        if (shift.clockInTime) {
+            const durationMs = shift.clockOutTime.getTime() - shift.clockInTime.getTime();
+            const hours = durationMs / (1000 * 60 * 60);
+            shift.workedHours = parseFloat(hours.toFixed(2));
+        }
+        
+        await shift.save();
+
+        const updatedShift = await Shift.findById(id)
+            .populate('assignedTo', 'name email')
+            .populate('createdBy', 'name email');
+
+        res.status(200).json({ message: 'Shift marked as completed', shift: updatedShift });
         
     } catch (error) {
-        console.error('Error deleting shift:', error);
+        console.error('Error marking shift as completed:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 }
+
+
 export const markShiftAsMissed = async (req: Request, res: Response, next: NextFunction) => {
     try{
         const user = req.user;
@@ -644,9 +679,10 @@ export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) =>
 
 
 export const approveShift = async (req: Request, res: Response) => {
-    try{
+    try {
         const { id } = req.params;
         const manager = req.user;
+        
         if (manager.role !== 'manager') {
             res.status(403).json({ message: 'Forbidden, Only managers can approve shifts' });
             return;
@@ -659,22 +695,27 @@ export const approveShift = async (req: Request, res: Response) => {
             return;
         }
 
-        //Prevent access across organizations
+        // Prevent access across organizations
         if (shift.organizationId.toString() !== manager.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different Organization' });
             return;
         }
 
-        // Allow if
+        // Check if shift is completed
         if (shift.status !== 'completed') {
-            res.status(400).json({ message: 'Shift cannot be approved unless it is completed' });
+            res.status(400).json({ message: 'Shift must be completed before approval' });
             return;
         }
 
+        // Update ApprovalStatus to approved
         shift.ApprovalStatus = 'approved';
         await shift.save();
 
-        res.status(200).json({ message: 'Shift approved successfully', shift });
+        const updatedShift = await Shift.findById(id)
+            .populate('assignedTo', 'name email')
+            .populate('createdBy', 'name email');
+
+        res.status(200).json({ message: 'Shift approved successfully', shift: updatedShift });
 
     } catch (error) {
         console.error('Error approving shift:', error);

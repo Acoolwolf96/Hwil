@@ -98,8 +98,18 @@ export const verifyAccessToken = (token: string): JwtPayload => {
  * @throws Error if verification fails
  */
 export const verifyRefreshToken = (token: string): JwtPayload => {
-    const verifiedToken = jwt.verify(token, refreshPublicKey, { algorithms: ['RS256'] });
-    return verifiedToken as JwtPayload;
+    try {
+        console.log('Verifying refresh token...');
+        const verifiedToken = jwt.verify(token, refreshPublicKey, { algorithms: ['RS256'] });
+        console.log('Refresh token verified successfully');
+        return verifiedToken as JwtPayload;
+    } catch (error: any) {
+        console.error('Refresh token verification failed:', error.name, error.message);
+        if (error.name === 'TokenExpiredError') {
+            console.error('Token expired at:', error.expiredAt);
+        }
+        throw error;
+    }
 };
 
 /**

@@ -13,7 +13,6 @@ router.get('/getInvites', authMiddleware, getInvites);
 router.post('/', authMiddleware, sendInvite);
 
 
-
 // POST /invite/register – Register a staff member using an invite token
 router.post('/register/staff', authMiddleware, registerStaffWithToken);
 
