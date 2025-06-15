@@ -4,8 +4,9 @@
   "description": "",
   "private": true,
   "scripts": {
-    "start": "ts-node bin/www.ts",
-    "dev": "nodemon bin/www.ts"
+    "start": "node dist/bin/www.js",
+    "dev": "nodemon bin/www.ts",
+    "build": "tsc"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.5",

@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: hwil-backend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DBUSERNAME
+        sync: false
+      - key: DBPASSWORD
+        sync: false
+      - key: DB
+        value: Hwil
+      - key: CLUSTER
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_ACCESS_PRIVATE_KEY_PATH
+        value: keys/private.key
+      - key: JWT_ACCESS_PUBLIC_KEY_PATH
+        value: keys/public.key
+      - key: JWT_REFRESH_PRIVATE_KEY_PATH
+        value: keys/private.key
+      - key: JWT_REFRESH_PUBLIC_KEY_PATH
+        value: keys/public.key
+      - key: JWT_ACCESS_EXPIRES
+        value: 900
+      - key: JWT_REFRESH_EXPIRES
+        value: 604800
