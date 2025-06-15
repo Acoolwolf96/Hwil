@@ -1,5 +1,5 @@
 import express from 'express';
-import { sendInvite, getInvites } from '../controllers/inviteController';
+import {sendInvite, getInvites, verifyStaffToken} from '../controllers/inviteController';
 import { authMiddleware } from '../middleware/auth';
 import { registerStaffWithToken } from '../controllers/authControllers';
 
@@ -14,7 +14,9 @@ router.post('/', authMiddleware, sendInvite);
 
 
 // POST /invite/register – Register a staff member using an invite token
-router.post('/register/staff', authMiddleware, registerStaffWithToken);
+router.post('/register/staff', registerStaffWithToken);
+
+router.get('/verify', verifyStaffToken);
 
 
 export default router;

@@ -47,7 +47,7 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
         const organizationName = org?.name || 'Hwil';
 
         // Construct invite link
-        const inviteLink = `${process.env.FRONTEND_URL}/v4/register/staff?token=${token}`;
+        const inviteLink = `${process.env.FRONTEND_URL}/register-staff?token=${token}`;
 
         // Send email
         await sendEmail({
@@ -86,3 +86,44 @@ export const getInvites = async (req: Request, res: Response) => {
   }
 };
 
+
+
+export const verifyStaffToken = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { token } = req.query;
+
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ message: 'Token is required' });
+            return
+        }
+
+        // Add this debug log
+        console.log('Verifying token:', token);
+
+        const inviteToken = await InviteToken.findOne({
+            token,
+            used: false,
+            expiresAt: { $gt: new Date() }
+        }).populate('organizationId');
+
+        if (!inviteToken) {
+            console.log('Token not found or expired');
+            res.status(404).json({ message: 'Invalid or expired token' });
+            return
+        }
+
+        // Fix: Access the populated organization object correctly
+        const organization = inviteToken.organizationId as any; // Cast to any or your Organization type
+
+        res.json({
+            email: inviteToken.email,
+            organizationName: organization?.name || 'Unknown Organization' // Access the name property
+        });
+        return
+
+    } catch (error) {
+        console.error('Verification error:', error);
+        res.status(500).json({ message: 'Verification failed' });
+        return
+    }
+};
