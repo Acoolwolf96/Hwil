@@ -66,10 +66,39 @@ Make sure the JWT key files (`private.key` and `public.key`) are included in you
 
 ### Database Connection
 
-If you're having issues connecting to MongoDB, verify that:
-- Your MongoDB Atlas cluster is accessible from external IPs
+#### MongoDB Atlas Configuration
+
+To ensure your application can connect to MongoDB Atlas from Render, you need to configure your MongoDB Atlas Network Access settings. You have two options:
+
+##### Option 1: Allow Access from Anywhere (Recommended for Development)
+
+1. Log in to your MongoDB Atlas account
+2. Navigate to Network Access under Security in the left sidebar
+3. Click "Add IP Address"
+4. Click "Allow Access from Anywhere" (adds 0.0.0.0/0)
+5. Click "Confirm"
+
+This option is simpler but less secure. It's suitable for development but for production, consider using Option 2.
+
+##### Option 2: Whitelist Render's IP Addresses
+
+1. Log in to your MongoDB Atlas account
+2. Navigate to Network Access under Security in the left sidebar
+3. Click "Add IP Address"
+4. Add the IP addresses of your Render service (you can find these in the Render logs when your service attempts to connect)
+5. Add a comment like "Render Service" to identify this entry
+6. Click "Confirm"
+
+You may need to deploy your application first to see the connection attempts in the logs, then add those IP addresses to the whitelist.
+
+#### Troubleshooting Connection Issues
+
+If you're still having issues connecting to MongoDB, verify that:
+- Your MongoDB Atlas cluster is properly configured
 - The connection string in `dbconfig.ts` is correct
 - The environment variables for MongoDB are set correctly
+- Your MongoDB Atlas user has the correct permissions
+- Your MongoDB Atlas cluster is in an active state
 
 ### Environment Variables
 
