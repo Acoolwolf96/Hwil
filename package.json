@@ -4,7 +4,7 @@
   "description": "",
   "private": true,
   "scripts": {
-    "start": "node dist/bin/www.js",
+    "start": "node bin/www.js",
     "dev": "nodemon bin/www.ts",
     "build": "tsc"
   },
