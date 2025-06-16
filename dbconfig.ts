@@ -10,7 +10,7 @@ export const connectDB = async () => {
         await mongoose.connect(dbURI, {
             serverSelectionTimeoutMS: 15000,
         });
-        console.log(' Connected to MongoDB');
+        console.log(' Connected to Hwil');
     } catch (error) {
         console.error('MongoDB connection error:', error);
     }
