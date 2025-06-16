@@ -1,15 +1,14 @@
-import { Request, Response } from 'express';
+import {Request, Response} from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import { User } from '../models/User';
-import { Organization } from '../models/Organization';
-import {generateAccessToken, generateRefreshToken, parseTimeToSeconds, verifyAccessToken, verifyRefreshToken} from '../utils/jwt';
-import { sendEmail } from '../utils/email';
-import { Staff } from '../models/Staff';
-import { InviteToken } from '../models/InviteToken';
-import { Invite } from '../models/Invites';
-import { PasswordResetToken } from '../models/PasswordResetToken';
-import revokedToken from '../models/revokedToken';
+import {User} from '../models/User';
+import {Organization} from '../models/Organization';
+import {generateAccessToken, generateRefreshToken, parseTimeToSeconds} from '../utils/jwt';
+import {sendEmail} from '../utils/email';
+import {Staff} from '../models/Staff';
+import {InviteToken} from '../models/InviteToken';
+import {Invite} from '../models/Invites';
+import {PasswordResetToken} from '../models/PasswordResetToken';
 
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
@@ -121,7 +120,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const accessToken = generateAccessToken(payload);
         const refreshToken = generateRefreshToken(payload);
 
-        // Set refresh token in HTTP-only cookie
         res.cookie('refreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -130,7 +128,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             path: '/'
         });
 
-        // Don't send refresh token in response body for security
         res.status(200).json({
             user: {
                 id: account.id.toString(),
@@ -140,6 +137,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             },
             message: "Logged in Successfully",
             accessToken,
+            refreshToken,
             organizationId: account.organizationId,
         });
     } catch (err) {
@@ -193,7 +191,7 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
       role: 'staff', 
       organizationId: invite.organizationId,
       managerId: invite.createdBy,
-
+      
     });
 
     await staff.save();
@@ -241,7 +239,7 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
 export const getAllStaffInOrg = async (req: Request, res: Response) => {
   try {
     const user = req.user;
-
+    
     // Add null check for req.user
     if (!user) {
       res.status(401).json({ message: 'Not authenticated' });
@@ -338,17 +336,15 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
         // Find user
         const user = await User.findById(resetToken.userId);
-
+        
         if (!user) {
             res.status(404).json({ message: 'User not found' });
             return;
         }
 
         // Hash new password
-        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
         // Update user password
-        user.password = hashedPassword;
+        user.password = await bcrypt.hash(password, SALT_ROUNDS);
         await user.save();
 
         // Delete the used token
@@ -402,36 +398,6 @@ export const validateResetToken = async (req: Request, res: Response): Promise<v
 // POST /auth/logout – Logout user
 export const logout = async (req: Request, res: Response) => {
   try {
-    // Get the authorization header
-    const authHeader = req.headers.authorization;
-    const refreshToken = req.cookies?.refreshToken;
-
-    // Revoke access token if present
-    if (authHeader?.startsWith("Bearer ")) {
-      const accessToken = authHeader.split(" ")[1];
-      try {
-        const decoded = verifyAccessToken(accessToken);
-        // Add the token to the blacklist
-        await new revokedToken({ jti: decoded.jti }).save();
-      } catch (tokenErr) {
-        console.error('Error verifying access token during logout:', tokenErr);
-        // Continue with logout even if token verification fails
-      }
-    }
-
-    // Revoke refresh token if present
-    if (refreshToken) {
-      try {
-        const decoded = verifyRefreshToken(refreshToken);
-        // Add the token to the blacklist
-        await new revokedToken({ jti: decoded.jti }).save();
-      } catch (tokenErr) {
-        console.error('Error verifying refresh token during logout:', tokenErr);
-        // Continue with logout even if token verification fails
-      }
-    }
-
-    // Clear the refresh token cookie
     res.clearCookie('refreshToken');
     res.status(200).json({ message: 'Logged out successfully' });
     return;

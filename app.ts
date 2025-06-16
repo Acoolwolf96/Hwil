@@ -5,7 +5,6 @@ import cookieParser from 'cookie-parser';
 import logger from 'morgan';
 import cors from 'cors';
 import { authMiddleware } from './middleware/auth';
-import { secureLogger } from './middleware/secureLogging';
 
 
 import './types/express_aug';
@@ -25,21 +24,10 @@ const app = express();
 app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true,
-  exposedHeaders: ['X-New-Token'] // Removed Authorization from exposed headers
+  exposedHeaders: ['X-New-Token', 'Authorization']
 }));
 
-// Force HTTPS in production
-if (process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    if (req.headers['x-forwarded-proto'] !== 'https') {
-      return res.redirect(`https://${req.headers.host}${req.url}`);
-    }
-    next();
-  });
-}
-
-// Use secure logger to prevent logging sensitive information
-app.use(secureLogger);
+app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
@@ -68,26 +56,9 @@ app.use((_req: Request, _res: Response, next: NextFunction) => {
   next(createError(404));
 });
 
-// Add security headers
+// Add headers
 app.use((req, res, next) => {
-  // Content Security Policy
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; frame-ancestors 'none';"
-  );
-
-  // Prevent clickjacking
-  res.setHeader('X-Frame-Options', 'DENY');
-
-  // Enable XSS protection in browsers
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-
-  // Prevent MIME type sniffing
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  // Referrer policy
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
   next();
 });
 
