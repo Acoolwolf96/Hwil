@@ -5,13 +5,14 @@ import cookieParser from 'cookie-parser';
 import logger from 'morgan';
 import cors from 'cors';
 import { authMiddleware } from './middleware/auth';
+import { secureLogger } from './middleware/secureLogging';
 
 
 import './types/express_aug';
 
 // Import routes
 import usersRouter from './routes/users';
-import { register, login, getAllStaffInOrg, forgotPassword, resetPassword, validateResetToken } from './controllers/authControllers';
+import { register, login, getAllStaffInOrg, forgotPassword, resetPassword, validateResetToken, logout } from './controllers/authControllers';
 import { loginSchema, registerSchema } from "./validation/authSchema";
 import { validateRequest } from "./middleware/validateRequest";
 import notificationsRouter from './routes/notifications';
@@ -24,10 +25,21 @@ const app = express();
 app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: true,
-  exposedHeaders: ['X-New-Token', 'Authorization']
+  exposedHeaders: ['X-New-Token'] // Removed Authorization from exposed headers
 }));
 
-app.use(logger('dev'));
+// Force HTTPS in production
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+  });
+}
+
+// Use secure logger to prevent logging sensitive information
+app.use(secureLogger);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
@@ -42,6 +54,7 @@ apiRouter.use('/invites', inviteRouter);
 apiRouter.use('/shifts', shiftRouter);
 apiRouter.post('/login', validateRequest(loginSchema), login);
 apiRouter.post('/register', validateRequest(registerSchema), register);
+apiRouter.post('/logout', logout)
 
 apiRouter.post('/forgot-password', forgotPassword);
 apiRouter.post('/reset-password', resetPassword);
@@ -55,9 +68,26 @@ app.use((_req: Request, _res: Response, next: NextFunction) => {
   next(createError(404));
 });
 
-// Add headers
+// Add security headers
 app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', "default-src 'self'");
+  // Content Security Policy
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; frame-ancestors 'none';"
+  );
+
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+
+  // Enable XSS protection in browsers
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // Referrer policy
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
   next();
 });
 
