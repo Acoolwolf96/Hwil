@@ -27,7 +27,8 @@ export const sendInvite = async (req: Request, res: Response): Promise<void> => 
         await Invite.create({
             name,
             email,
-            stage: 'sent'
+            stage: 'sent',
+            organizationId: user.organizationId,
         });
 
         const token = crypto.randomBytes(16).toString('hex');
@@ -85,6 +86,33 @@ export const getInvites = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Failed to fetch invites' });
   }
 };
+
+export const getInvitesForOrganization = async (req: Request, res: Response) => {
+    try {
+        const user = req.user;
+
+        // Only managers should be able to fetch their org invites
+        if (user.role !== 'manager') {
+            res.status(403).json({ message: 'Only managers can view invites' });
+            return;
+        }
+
+        const { name, email, stage } = req.query;
+        const filter: any = { organizationId: user.organizationId };
+
+        if (name) filter.name = { $regex: new RegExp(name as string, 'i') };
+        if (email) filter.email = { $regex: new RegExp(email as string, 'i') };
+        if (stage) filter.stage = stage;
+
+        const invites = await Invite.find(filter).sort({ createdAt: -1 });
+
+        res.status(200).json(invites);
+    } catch (error) {
+        console.error('Error fetching invites for organization:', error);
+        res.status(500).json({ message: 'Failed to fetch invites' });
+    }
+};
+
 
 
 

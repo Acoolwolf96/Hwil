@@ -14,7 +14,7 @@ router.post('/add', authMiddleware, createShift);
 router.post('/upload', authMiddleware, upload.single('file'), uploadShiftFromSpreadsheet);
 router.post('/open', authMiddleware, createOpenShift);
 
-router.get('/getall', authMiddleware, getShifts);
+router.get('/getAll', authMiddleware, getShifts);
 router.get('/my-shifts', authMiddleware, getMyShift);
 router.get('/open', authMiddleware, getOpenShifts);
 

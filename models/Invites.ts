@@ -5,6 +5,7 @@ export interface IInvite extends Document {
   email: string;
   stage: "pending" | "sent" | "accepted" | "expired";
   expiresAt?: Date;  // Optional: Auto-delete expired invites
+  organizationId: mongoose.Types.ObjectId;
 }
 
 const inviteSchema = new Schema<IInvite>({
@@ -16,6 +17,11 @@ const inviteSchema = new Schema<IInvite>({
     type: String,
     required: true,
     unique: true,
+  },
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    required: true,
   },
   stage: {
     type: String,
