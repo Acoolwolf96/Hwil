@@ -3,6 +3,11 @@ import {verifyRefreshToken, generateAccessToken, parseTimeToSeconds} from '../ut
 import { cookieConfig } from '../utils/cookies';
 
 export const refreshAccessToken = async (req: Request, res: Response) => {
+
+    console.log('Refresh token endpoint hit');
+    console.log('Cookies:', req.cookies);
+    console.log('Headers:', req.headers.cookie);
+
     const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
