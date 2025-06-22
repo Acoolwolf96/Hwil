@@ -37,6 +37,12 @@ app.use(cors({
   exposedHeaders: ['X-New-Token']
 }));
 
+app.use((req, res, next) => {
+  console.log('Incoming cookies:', req.cookies);
+  console.log('Incoming headers:', req.headers);
+  next();
+});
+
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));

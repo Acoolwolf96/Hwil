@@ -1,6 +1,7 @@
 import {Request, Response} from 'express';
 import {verifyRefreshToken, generateAccessToken, parseTimeToSeconds} from '../utils/jwt';
 import { cookieConfig } from '../utils/cookies';
+import cookie from "cookie";
 
 export const refreshAccessToken = async (req: Request, res: Response) => {
 
@@ -8,7 +9,9 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
     console.log('Cookies:', req.cookies);
     console.log('Headers:', req.headers.cookie);
 
-    const refreshToken = req.cookies?.refreshToken;
+    const refreshToken = req.cookies?.refreshToken ||
+        req.headers['x-refresh-token'] ||
+        (req.headers.cookie && cookie.parse(req.headers.cookie).refreshToken);
 
     if (!refreshToken) {
         console.error('No refresh token in cookies');
