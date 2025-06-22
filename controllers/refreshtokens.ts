@@ -1,23 +1,35 @@
-import { Request, Response } from 'express';
-import { verifyRefreshToken, generateAccessToken } from '../utils/jwt';
+import {Request, Response} from 'express';
+import {verifyRefreshToken, generateAccessToken, parseTimeToSeconds} from '../utils/jwt';
+import { cookieConfig } from '../utils/cookies';
 
-export const refreshAccessToken = (req: Request, res: Response) => {
-    const { refreshToken } = req.body;
+export const refreshAccessToken = async (req: Request, res: Response) => {
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
-        return res.status(400).json({ message: 'Missing refresh token' });
+        console.error('No refresh token in cookies');
+        res.status(400).json({ message: 'Missing refresh token' });
+        return
     }
 
     try {
         const user = verifyRefreshToken(refreshToken);
         const newAccessToken = generateAccessToken({
-            id: user.id, email: user.email,
-            role: '',
-            organizationId: ''
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            organizationId: user.organizationId
         });
 
-        return res.json({ accessToken: newAccessToken });
+        res.cookie('accessToken', newAccessToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
+        });
+
+        res.status(200).json({ message: 'Token refreshed' });
+        return;
     } catch (err) {
-        return res.status(403).json({ message: 'Invalid refresh token' });
+        console.error('Refresh token error:', err);
+        res.status(403).json({ message: 'Invalid refresh token' });
+        return;
     }
 };

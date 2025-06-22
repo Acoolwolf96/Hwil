@@ -141,7 +141,7 @@ export const verifyStaffToken = async (req: Request, res: Response): Promise<voi
         }
 
         // Fix: Access the populated organization object correctly
-        const organization = inviteToken.organizationId as any; // Cast to any or your Organization type
+        const organization = inviteToken.organizationId as any; // Cast to any
 
         res.json({
             email: inviteToken.email,

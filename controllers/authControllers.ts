@@ -1,91 +1,104 @@
-import {Request, Response} from 'express';
+import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import {User} from '../models/User';
-import {Organization} from '../models/Organization';
-import {generateAccessToken, generateRefreshToken, parseTimeToSeconds} from '../utils/jwt';
-import {sendEmail} from '../utils/email';
-import {Staff} from '../models/Staff';
-import {InviteToken} from '../models/InviteToken';
-import {Invite} from '../models/Invites';
-import {PasswordResetToken} from '../models/PasswordResetToken';
+import { User } from '../models/User';
+import { Organization } from '../models/Organization';
+import { generateAccessToken, generateRefreshToken, parseTimeToSeconds } from '../utils/jwt';
+import { sendEmail } from '../utils/email';
+import { Staff } from '../models/Staff';
+import { InviteToken } from '../models/InviteToken';
+import { Invite } from '../models/Invites';
+import { PasswordResetToken } from '../models/PasswordResetToken';
+import { cookieConfig } from '../utils/cookies';
 
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
 
 // POST /auth/register – Manager onboarding
 export const register = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, email, password, organizationName } = req.body;
-
-    if (!name || !email || !password || !organizationName) {
-      res.status(400).json({ error: 'Missing required fields' });
-        return;
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      res.status(409).json({ error: 'User already exists' });
-        return;
-    }
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: 'manager',
-    });
-
-    const savedUser = await user.save();
-
-    const organization = new Organization({
-      name: organizationName,
-      createdBy: savedUser._id,
-    });
-
-    const savedOrg = await organization.save();
-
-    savedUser.organizationId = savedOrg._id as import('mongoose').Types.ObjectId;
-    await savedUser.save();
-
-    const payload = {
-      id: (savedUser._id as import('mongoose').Types.ObjectId).toString(),
-      email: savedUser.email,
-      role: savedUser.role,
-      organizationId: (savedOrg._id as import('mongoose').Types.ObjectId).toString(),
-    };
-
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.status(201).json({
-      message: 'Manager and organization created',
-      accessToken,
-      organizationId: savedOrg._id,
-    });
     try {
-      await sendEmail({
-        to: email,
-        subject: 'Welcome to our System',
-        template: 'welcome_email',
-        context: { username: name },
-      });
-    } catch (emailErr) {
-      console.error('Email sending failed:', emailErr);
+        const { name, email, password, organizationName } = req.body;
+
+        if (!name || !email || !password || !organizationName) {
+            res.status(400).json({ error: 'Missing required fields' });
+            return;
+        }
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            res.status(409).json({ error: 'User already exists' });
+            return;
+        }
+
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+        const user = new User({
+            name,
+            email,
+            password: hashedPassword,
+            role: 'manager',
+        });
+
+        const savedUser = await user.save();
+
+        const organization = new Organization({
+            name: organizationName,
+            createdBy: savedUser._id,
+        });
+
+        const savedOrg = await organization.save();
+
+        savedUser.organizationId = savedOrg._id as import('mongoose').Types.ObjectId;
+        await savedUser.save();
+
+        const payload = {
+            id: (savedUser._id as import('mongoose').Types.ObjectId).toString(),
+            email: savedUser.email,
+            role: savedUser.role,
+            organizationId: (savedOrg._id as import('mongoose').Types.ObjectId).toString(),
+        };
+
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        // Set tokens as HTTP-only cookies
+        res.cookie('accessToken', accessToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
+
+        });
+
+        res.status(201).json({
+            message: 'Manager and organization created',
+            user: {
+                id: savedUser._id,
+                name: savedUser.name,
+                email: savedUser.email,
+                role: savedUser.role
+            },
+            organizationId: savedOrg._id,
+        });
+
+        try {
+            await sendEmail({
+                to: email,
+                subject: 'Welcome to our System',
+                template: 'welcome_email',
+                context: { username: name },
+            });
+        } catch (emailErr) {
+            console.error('Email sending failed:', emailErr);
+        }
+    } catch (err) {
+        console.error('Registration error:', err);
+        res.status(500).json({ error: 'Registration failed' });
+        return;
     }
-  } catch (err) {
-    console.error('Registration error:', err);
-    res.status(500).json({ error: 'Registration failed' });
-    return;
-  }
 };
 
 // POST /auth/login – Authenticate user
@@ -120,13 +133,20 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         const accessToken = generateAccessToken(payload);
         const refreshToken = generateRefreshToken(payload);
 
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000, // Convert to milliseconds
-            path: '/'
+
+        // Set tokens as HTTP-only cookies
+        res.cookie('accessToken', accessToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
+
         });
+
+        res.cookie('refreshToken', refreshToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
+
+        });
+
 
         res.status(200).json({
             user: {
@@ -136,8 +156,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
                 role: account.role,
             },
             message: "Logged in Successfully",
-            accessToken,
-            refreshToken,
             organizationId: account.organizationId,
         });
     } catch (err) {
@@ -146,116 +164,128 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 };
 
-
 export const registerStaffWithToken = async (req: Request, res: Response): Promise<void> => {
-  try{
-    const { token } = req.query;
-    const { name, password } = req.body;
+    try {
+        const { token } = req.query;
+        const { name, password } = req.body;
 
-    if (!token || typeof token !== 'string') {
-      res.status(400).json({ message: 'Invalid or missing token' });
-      return;
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ message: 'Invalid or missing token' });
+            return;
+        }
+
+        if (!name || !password) {
+            res.status(400).json({ message: 'Name and password are required' });
+            return;
+        }
+
+        const invite = await InviteToken.findOneAndDelete({ token });
+
+        if (!invite) {
+            res.status(400).json({ message: 'Invalid invite token' });
+            return;
+        }
+
+        if (invite.expiresAt < new Date()) {
+            res.status(400).json({ message: 'Invite token has expired' });
+            return;
+        }
+
+        const existingUser = await User.findOne({ email: invite.email });
+        if (existingUser) {
+            res.status(409).json({ message: 'User already exists with this email' });
+            return;
+        }
+
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+        const staff = new Staff({
+            name,
+            email: invite.email,
+            password: hashedPassword,
+            role: 'staff',
+            organizationId: invite.organizationId,
+            managerId: invite.createdBy,
+        });
+
+        await staff.save();
+
+        // Update the invite status
+        await Invite.updateOne(
+            { email: invite.email },
+            { $set: { stage: 'accepted' } }
+        );
+
+        const payload = {
+            id: (staff.id as import('mongoose').Types.ObjectId).toString(),
+            email: staff.email,
+            role: 'staff',
+            organizationId: (staff.organizationId as import('mongoose').Types.ObjectId).toString(),
+            managerId: (staff.managerId as import('mongoose').Types.ObjectId).toString(),
+        };
+
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        // Set tokens as HTTP-only cookies
+        res.cookie('accessToken', accessToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
+
+        });
+
+        res.cookie('refreshToken', refreshToken, {
+            ...cookieConfig,
+            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
+
+        });
+
+        res.status(201).json({
+            message: 'Staff registered successfully',
+            user: {
+                id: staff.id,
+                name: staff.name,
+                email: staff.email,
+                role: staff.role
+            },
+            organizationId: invite.organizationId,
+        });
+
+        try {
+            await sendEmail({
+                to: staff.email,
+                subject: 'Welcome to our System',
+                template: 'staff_registration_success',
+                context: { username: staff.name },
+            });
+        } catch (emailErr) {
+            console.error('Email sending failed:', emailErr);
+        }
+
+    } catch (error) {
+        console.error('Error registering staff with token:', error);
+        res.status(500).json({ message: 'Error registering staff' });
     }
-
-    if(!name || !password){
-      res.status(400).json({ message: 'Name and password are required' });
-      return;
-    }
-
-    const invite = await InviteToken.findOneAndDelete({ token });
-
-    if (!invite){
-      res.status(400).json({ message: 'Invalid invite token' });
-      return;
-    }
-
-    if (invite.expiresAt < new Date()) {
-      res.status(400).json({ message: 'Invite token has expired' });
-      return;
-    }
-
-    const existingUser = await User.findOne({ email: invite.email });
-    if (existingUser) {
-      res.status(409).json({ message: 'User already exists with this email' });
-      return;
-    }
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-
-
-    const staff = new Staff({
-      name,
-      email: invite.email,
-      password: hashedPassword,
-      role: 'staff', 
-      organizationId: invite.organizationId,
-      managerId: invite.createdBy,
-      
-    });
-
-    await staff.save();
-
-    // Update the invite status
-    await Invite.updateOne(
-      { email: invite.email },
-      { $set: { stage: 'accepted' } }
-    );
-
-
-    const payload = {
-      id: (staff.id as import('mongoose').Types.ObjectId).toString(),
-      email: staff.email,
-      role: 'staff',
-      organizationId: (staff.organizationId as import('mongoose').Types.ObjectId).toString(),
-      managerId: (staff.managerId as import('mongoose').Types.ObjectId).toString(),
-    };
-
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: '/',
-    });
-    res.status(201).json({
-      message: 'Staff registered successfully',
-      accessToken,
-      refreshToken,
-      organizationId: invite.organizationId,
-    });
-
-
-  } catch (error) {
-    console.error('Error registering staff with token:', error);
-    res.status(500).json({ message: 'Error registering staff' });
-  }
 }
 
-
 export const getAllStaffInOrg = async (req: Request, res: Response) => {
-  try {
-    const user = req.user;
-    
-    // Add null check for req.user
-    if (!user) {
-      res.status(401).json({ message: 'Not authenticated' });
-      return;
+    try {
+        const user = req.user;
+
+        if (!user) {
+            res.status(401).json({ message: 'Not authenticated' });
+            return;
+        }
+
+        const { organizationId } = user;
+
+        const staffList = await Staff.find({ organizationId }).select('_id name email');
+        res.status(200).json(staffList);
+    } catch (error) {
+        console.error('Failed to get staff list:', error);
+        res.status(500).json({ message: 'Failed to get staff list' });
     }
-
-    const { organizationId } = req.user; // Now safe to destructure
-
-    const staffList = await Staff.find({ organizationId }).select('_id name email');
-    res.status(200).json(staffList);
-  } catch (error) {
-    console.error('Failed to get staff list:', error);
-    res.status(500).json({ message: 'Failed to get staff list' });
-  }
 };
-
 
 export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -309,8 +339,6 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     }
 };
 
-
-
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
         const { token, password } = req.body;
@@ -320,10 +348,8 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        // Hash the token to compare with stored token
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-        // Find valid token
         const resetToken = await PasswordResetToken.findOne({
             token: hashedToken,
             expiresAt: { $gt: new Date() },
@@ -334,20 +360,18 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        // Find user
         const user = await User.findById(resetToken.userId);
-        
-        if (!user) {
+        const staff = await Staff.findById(resetToken.userId);
+        const account = user || staff;
+
+        if (!account) {
             res.status(404).json({ message: 'User not found' });
             return;
         }
 
-        // Hash new password
-        // Update user password
-        user.password = await bcrypt.hash(password, SALT_ROUNDS);
-        await user.save();
+        account.password = await bcrypt.hash(password, SALT_ROUNDS);
+        await account.save();
 
-        // Delete the used token
         await PasswordResetToken.deleteOne({ _id: resetToken._id });
 
         res.status(200).json({ message: 'Password reset successful' });
@@ -366,10 +390,8 @@ export const validateResetToken = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        // Hash the token to compare with stored token
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-        // Check if token exists and is valid
         const resetToken = await PasswordResetToken.findOne({
             token: hashedToken,
             expiresAt: { $gt: new Date() },
@@ -387,23 +409,54 @@ export const validateResetToken = async (req: Request, res: Response): Promise<v
     }
 };
 
-
-
-
-
-
-
-
-
 // POST /auth/logout – Logout user
 export const logout = async (req: Request, res: Response) => {
-  try {
-    res.clearCookie('refreshToken');
-    res.status(200).json({ message: 'Logged out successfully' });
-    return;
-  } catch (err) {
-    console.error('Logout error:', err);
-    res.status(500).json({ error: 'Logout failed' });
-    return;
-  }
+    try {
+        // Clear both cookies
+        res.clearCookie('accessToken', cookieConfig);
+
+        res.clearCookie('refreshToken', cookieConfig);
+
+        res.status(200).json({ message: 'Logged out successfully' });
+        return;
+    } catch (err) {
+        console.error('Logout error:', err);
+        res.status(500).json({ error: 'Logout failed' });
+        return;
+    }
+};
+
+// GET /auth/me – Get current user info
+export const getCurrentUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+        res.setHeader('Cache-Control', 'no-store');
+
+        const userId = req.user?.id;
+        if (!userId) {
+            res.status(401).json({ message: 'Not authenticated' });
+            return
+        }
+
+        const user = await User.findById(userId).select('-password');
+        const staff = await Staff.findById(userId).select('-password');
+        const account = user || staff;
+
+        if (!account) {
+            res.status(404).json({ message: 'User not found' });
+            return
+        }
+
+        res.status(200).json({
+            user: {
+                id: account._id,
+                name: account.name,
+                email: account.email,
+                role: account.role,
+                organizationId: account.organizationId
+            }
+        });
+    } catch (error) {
+        console.error('Error getting current user:', error);
+        res.status(500).json({ message: 'Error fetching user data' });
+    }
 };

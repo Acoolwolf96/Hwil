@@ -3,7 +3,9 @@
 import app from '../app';
 import http from 'http';
 import dotenv from 'dotenv';
-import { connectDB } from '../dbconfig'; 
+import { connectDB } from '../dbconfig';
+
+import '../job/sendShiftReminders'
 
 dotenv.config();
 

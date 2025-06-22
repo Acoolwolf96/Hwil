@@ -18,6 +18,7 @@ export interface IShift extends Document {
     reminderSent?: boolean;
     // The user who created the shift
     createdBy: mongoose.Types.ObjectId;
+    updatedBy: mongoose.Types.ObjectId;
     notes?: string;
     ApprovalStatus?: "pending" | "approved" | "rejected";
  
@@ -37,7 +38,7 @@ const ShiftSchema: Schema<IShift> = new Schema({
     },
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        ref: "Staff",
     },
     date: {
         type: Date,
@@ -84,6 +85,10 @@ const ShiftSchema: Schema<IShift> = new Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true,
+    },
+    updatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
     },
     notes: {
         type: String,

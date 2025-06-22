@@ -2,23 +2,28 @@ import { Request, Response, NextFunction } from "express";
 import { generateAccessToken, verifyAccessToken, verifyRefreshToken } from "../utils/jwt";
 import revokedToken from "../models/revokedToken";
 
-
-
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const authHeader = req.headers.authorization;
+    // Get token from cookie first, then check Authorization header as fallback
+    let accessToken = req.cookies?.accessToken;
+
+    // If no cookie, check Authorization header (but don't expose it in response)
+    if (!accessToken) {
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            accessToken = authHeader.substring(7);
+        }
+    }
+
     const refreshToken = req.cookies?.refreshToken;
 
-    if (!authHeader?.startsWith("Bearer ")) {
-        res.status(401).json({ message: "Unauthorized - Token missing" });
+    if (!accessToken) {
+        res.status(401).json({ message: "Unauthorized - Access token missing" });
         return;
     }
 
-    const accessToken = authHeader.split(" ")[1];
-
     try {
         req.user = verifyAccessToken(accessToken);
-        next();
-        return;
+        return next();
     } catch (error: any) {
         console.log('Access token verification error:', error.name);
 
@@ -34,7 +39,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                     return;
                 }
 
-                // Generate new access token using the same structure as your JWT utility expects
                 const newAccessToken = generateAccessToken({
                     id: payload.id,
                     email: payload.email,
@@ -44,15 +48,20 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
                 console.log('New access token generated');
 
-                // Send new token in response header
-                res.setHeader("X-New-Token", newAccessToken);
-                res.setHeader("Access-Control-Expose-Headers", "X-New-Token");
+                // Set the new token in a custom header
+                res.setHeader('X-New-Token', newAccessToken);
 
-                // Set req.user with the payload
+                // Also set it as an HTTP-only cookie
+                res.cookie("accessToken", newAccessToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === "production",
+                    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+                    maxAge: 15 * 60 * 1000, // 15 minutes
+                    path: '/'
+                });
+
                 req.user = payload;
-
-                next();
-                return;
+                return next();
             } catch (refreshError: any) {
                 console.error('Refresh token error:', refreshError.name, refreshError.message);
                 res.status(403).json({ message: "Invalid refresh token" });
@@ -64,12 +73,8 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
             res.status(401).json({ message: "Invalid token" });
             return;
         }
-        // debugging
-        console.log('Refresh token present:', !!refreshToken);
-        console.log('Cookies:', req.cookies);
 
         res.status(401).json({ message: "Unauthorized" });
-        return;
     }
 };
 
