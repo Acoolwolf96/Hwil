@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { generateAccessToken, verifyAccessToken, verifyRefreshToken } from "../utils/jwt";
+import {generateAccessToken, parseTimeToSeconds, verifyAccessToken, verifyRefreshToken} from "../utils/jwt";
 import revokedToken from "../models/revokedToken";
+import { cookieConfig } from '../utils/cookies';
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Get token from cookie first, then check Authorization header as fallback
@@ -52,12 +53,9 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                 res.setHeader('X-New-Token', newAccessToken);
 
                 // Also set it as an HTTP-only cookie
-                res.cookie("accessToken", newAccessToken, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === "production",
-                    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-                    maxAge: 15 * 60 * 1000, // 15 minutes
-                    path: '/'
+                res.cookie('accessToken', accessToken, {
+                    ...cookieConfig,
+                    maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
                 });
 
                 req.user = payload;
