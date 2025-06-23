@@ -15,5 +15,5 @@ export const cookieConfig: CookieOptions = {
     secure  : true,                                // HTTPS only (Render is HTTPS)
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     domain  : cookieDomain,                        // <- key for cross-sub-domain
-    path    : '/',
+    path    : '/v4',
 };
