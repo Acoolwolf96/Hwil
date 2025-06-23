@@ -1,78 +1,56 @@
 import { Request, Response, NextFunction } from "express";
-import {generateAccessToken, parseTimeToSeconds, verifyAccessToken, verifyRefreshToken} from "../utils/jwt";
+import {generateAccessToken, verifyAccessToken, verifyRefreshToken} from "../utils/jwt";
 import revokedToken from "../models/revokedToken";
 import { cookieConfig } from '../utils/cookies';
 
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    // Get token from cookie first, then check Authorization header as fallback
-    let accessToken = req.cookies?.accessToken;
-
-    // If no cookie, check Authorization header (but don't expose it in response)
-    if (!accessToken) {
-        const authHeader = req.headers.authorization;
-        if (authHeader?.startsWith('Bearer ')) {
-            accessToken = authHeader.substring(7);
-        }
-    }
-
+/**
+ * Middleware to authenticate users using JWT tokens.
+ * * It checks for the presence of an access token in the Authorization header.
+ * * If the access token is missing or invalid, it checks for a refresh token in cookies.
+ * * If the refresh token is valid, it generates a new access token and sets it in the response header.
+ * * If both tokens are invalid, it sends a 401 Unauthorized response.
+ *
+ * @param req - The request object.
+ * @param res - The response object.
+ * @param next - The next middleware function.
+ * @returns A promise that resolves when the middleware is done.
+ */
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
     const refreshToken = req.cookies?.refreshToken;
 
-    if (!accessToken) {
-        res.status(401).json({ message: "Unauthorized - Access token missing" });
-        return;
+    if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json({message: 'Access token missing'});
+        return
     }
+
+    const accessToken = authHeader.split(' ')[1];
 
     try {
         req.user = verifyAccessToken(accessToken);
-        return next();
-    } catch (error: any) {
-        console.log('Access token verification error:', error.name);
-
-        if (error.name === "TokenExpiredError" && refreshToken) {
+        next();
+        return;
+    } catch (err: any) {
+        if (err.name === 'TokenExpiredError' && refreshToken) {
             try {
-                console.log('Attempting to refresh token...');
                 const payload = verifyRefreshToken(refreshToken);
-
-                // Check if refresh token is revoked
                 if (await isTokenRevoked(payload.jti)) {
-                    console.log('Refresh token is revoked');
-                    res.status(403).json({ message: "Refresh token revoked" });
+                    res.status(403).json({message: 'Refresh token revoked'});
                     return;
                 }
-
-                const newAccessToken = generateAccessToken({
-                    id: payload.id,
-                    email: payload.email,
-                    role: payload.role,
-                    organizationId: payload.organizationId
-                });
-
-                console.log('New access token generated');
-
-                // Set the new token in a custom header
-                res.setHeader('X-New-Token', newAccessToken);
-
-                // Also set it as an HTTP-only cookie
-                res.cookie('accessToken', accessToken, {
-                    ...cookieConfig,
-                    maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
-                });
+                const newAccessToken = generateAccessToken(payload);
+                res.setHeader('accessToken', newAccessToken);
 
                 req.user = payload;
-                return next();
-            } catch (refreshError: any) {
-                console.error('Refresh token error:', refreshError.name, refreshError.message);
-                res.status(403).json({ message: "Invalid refresh token" });
+                next();
+                return;
+            } catch (refreshErr) {
+                res.status(403).json({message: 'Invalid refresh token'});
                 return;
             }
         }
 
-        if (error.name === "JsonWebTokenError") {
-            res.status(401).json({ message: "Invalid token" });
-            return;
-        }
-
-        res.status(401).json({ message: "Unauthorized" });
+        res.status(401).json({message: 'Unauthorized'});
     }
 };
 

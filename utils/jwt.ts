@@ -138,21 +138,3 @@ export const parseTimeToSeconds = (duration: string | undefined, fallback: numbe
         default: return fallback;
     }
 };
-
-const selfTest = () => {
-    const testToken = generateAccessToken({
-        id: 'test',
-        email: 'test@example.com',
-        role: 'test',
-        organizationId: 'test',
-    });
-
-    try {
-        verifyAccessToken(testToken);
-        console.log('✔ signing / verifying keys match');
-    } catch (e) {
-        console.error('✘ keys do NOT match:', e);
-    }
-};
-
-selfTest();
