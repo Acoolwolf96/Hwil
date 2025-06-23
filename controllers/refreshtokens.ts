@@ -38,18 +38,11 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
             organizationId: user.organizationId
         });
 
-        res.cookie('accessToken', newAccessToken, {
-            ...cookieConfig,
-            maxAge: parseTimeToSeconds(process.env.JWT_ACCESS_EXPIRES) * 1000,
-        });
 
-        // Also set the refresh token again to ensure it persists
-        res.cookie('refreshToken', refreshToken, {
-            ...cookieConfig,
-            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
+        res.status(200).json({
+            accessToken: newAccessToken,
+            message: 'Token refreshed'
         });
-
-        res.status(200).json({ message: 'Token refreshed' });
         return;
     } catch (err) {
         console.error('Refresh token error:', err);
