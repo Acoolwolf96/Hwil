@@ -5,5 +5,5 @@ export const cookieConfig: CookieOptions = {
     secure: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     path: '/',
-    domain: process.env.COOKIE_DOMAIN || undefined, // Set this if using cross-subdomain auth
+    domain: process.env.COOKIE_DOMAIN || undefined || '.onrender.com' // Set this if using cross-subdomain auth
 };

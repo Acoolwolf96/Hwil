@@ -157,6 +157,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             },
             message: "Logged in Successfully",
             organizationId: account.organizationId,
+            token: {
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+            }
         });
     } catch (err) {
         console.error('Login error:', err);
