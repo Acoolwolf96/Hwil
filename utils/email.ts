@@ -25,7 +25,7 @@ transporter.verify((error, success) => {
 interface EmailPayload {
     to: string;
     subject: string;
-    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff' | 'shift_reminder' | 'staff_registration_success' | 'shift_schedule_created' | 'shift_updated' | 'shift_cancelled';
+    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff' | 'shift_reminder' | 'staff_registration_success' | 'shift_schedule_created' | 'shift_updated' | 'shift_cancelled' | 'shift_rejected';
     context: Record<string, any>;
 }
 
@@ -174,6 +174,24 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
                 <p>Best regards,<br/>The Hwil Team</p>
                 <hr>
                 <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
+            `;
+            break;
+        case 'shift_rejected':
+            html = `
+                <p>Dear ${context.username},</p>
+                <p>Your submitted shift for <strong>${context.date}</strong> (${context.startTime} - ${context.endTime}) has been reviewed and requires your attention.</p>
+                
+                <div style="background-color: #fffbe6; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #b45309;">Shift Rejected by ${context.managerName}</h3>
+                    <p style="margin-bottom: 5px;"><strong>Reason for rejection:</strong></p>
+                    <p style="margin-top: 0; font-style: italic;">"${context.reason}"</p>
+                </div>
+                
+                <p><strong>Next Steps:</strong> Please log in to your Hwil account to edit the shift details and resubmit it for approval. If you have questions, please contact your manager directly.</p>
+                
+                <p>Best regards,<br/>The Hwil Team</p>
+                <hr>
+                <p style="font-size: 12px; color: gray;">This is an automated notification. Please do not reply.</p>
             `;
             break;
 

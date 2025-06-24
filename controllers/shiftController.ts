@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import xlsx from 'xlsx';
 import { Staff } from '../models/Staff';
-
+import { User } from '../models/User';
 import { Shift } from '../models/Shift';
 import {sendEmail} from "../utils/email";
 import {Types} from "mongoose";
@@ -595,56 +595,103 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 
         if (user.role !== 'staff') {
             res.status(403).json({ message: 'Forbidden: Only staff can clock in' });
-            return
+            return;
         }
 
         const shift = await Shift.findById(req.params.id);
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
-            return
+            return;
         }
 
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different organization' });
-            return
+            return;
         }
 
         if (shift.assignedTo.toString() !== user.id.toString()) {
             res.status(403).json({ message: 'Forbidden: You are not assigned to this shift' });
-            return
+            return;
         }
 
         if (shift.clockInTime) {
             res.status(403).json({ message: 'Forbidden: You have already clocked in' });
-            return
+            return;
         }
 
         const now = new Date();
 
-        // Combine shift.date and shift.startTime to get shift start datetime
+        // Parse shift date and time properly
+        const shiftDate = new Date(shift.date);
         const [hour, minute] = shift.startTime.split(':').map(Number);
-        const shiftStart = new Date(shift.date);
-        shiftStart.setHours(hour, minute, 0, 0);
 
-
+        // Create shift start datetime in UTC
+        const shiftStart = new Date(Date.UTC(
+            shiftDate.getUTCFullYear(),
+            shiftDate.getUTCMonth(),
+            shiftDate.getUTCDate(),
+            hour,
+            minute,
+            0,
+            0
+        ));
 
         // Allow clock-in only if within 1 hour before shift start
         const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
+
+        // Debug logging
+        console.log('Clock-in attempt:', {
+            currentTime: now.toISOString(),
+            shiftDate: shift.date,
+            shiftStartTime: shift.startTime,
+            calculatedShiftStart: shiftStart.toISOString(),
+            oneHourBefore: oneHourBeforeShift.toISOString(),
+            canClockIn: now >= oneHourBeforeShift
+        });
+
         if (now < oneHourBeforeShift) {
-            res.status(403).json({ message: 'Forbidden: You can only clock in within 1 hour before the shift start time' });
-            return
+            const minutesUntilAllowed = Math.ceil((oneHourBeforeShift.getTime() - now.getTime()) / (60 * 1000));
+            res.status(403).json({
+                message: `You can clock in ${minutesUntilAllowed} minutes from now (within 1 hour before shift start)`,
+                details: {
+                    currentTime: now.toISOString(),
+                    earliestClockIn: oneHourBeforeShift.toISOString(),
+                    shiftStart: shiftStart.toISOString()
+                }
+            });
+            return;
+        }
+
+        // Check if trying to clock in too late (optional - add if needed)
+        const twoHoursAfterShift = new Date(shiftStart.getTime() + 2 * 60 * 60 * 1000);
+        if (now > twoHoursAfterShift) {
+            res.status(403).json({
+                message: 'Cannot clock in more than 2 hours after shift start time',
+                details: {
+                    currentTime: now.toISOString(),
+                    shiftStart: shiftStart.toISOString()
+                }
+            });
+            return;
         }
 
         shift.clockInTime = now;
         shift.status = 'in-progress';
         await shift.save();
 
-        res.status(200).json({ message: 'Clocked in successfully', shift });
-        return
+        res.status(200).json({
+            message: 'Clocked in successfully',
+            shift,
+            clockInDetails: {
+                clockedInAt: now.toISOString(),
+                shiftStartTime: shiftStart.toISOString()
+            }
+        });
+        return;
     } catch (error) {
         console.error('Error clocking in shift:', error);
         res.status(500).json({ message: 'Internal server error' });
-        return
+        return;
     }
 };
 
@@ -874,3 +921,75 @@ export const approveShift = async (req: Request, res: Response) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 }
+
+export const rejectShift = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        // This comes from your auth middleware (JWT).
+        // It contains the manager's id, role, and organizationId.
+        const managerInfoFromToken = req.user;
+
+        if (managerInfoFromToken.role !== 'manager') {
+            res.status(403).json({ message: 'Forbidden: Only managers can reject shifts' });
+            return
+        }
+
+        if (!reason) {
+            res.status(400).json({ message: 'A reason for rejection is required' });
+            return
+        }
+
+        const shift = await Shift.findById(id).populate('assignedTo', 'name email');
+
+        if (!shift) {
+            res.status(404).json({ message: 'Shift not found' });
+            return
+        }
+
+        if (shift.organizationId.toString() !== managerInfoFromToken.organizationId.toString()) {
+            res.status(403).json({ message: 'Forbidden: Different Organization' });
+            return
+        }
+
+        // Update the shift document
+        shift.ApprovalStatus = 'rejected';
+        shift.status = 'assigned';
+        shift.notes = (shift.notes ? shift.notes + '\n\n' : '') + `Rejection Reason (${new Date().toLocaleDateString()}): ${reason}`;
+        await shift.save();
+
+        // Send the rejection email
+        if (shift.assignedTo && (shift.assignedTo as any).email) {
+            const staff = shift.assignedTo as any;
+
+            // --- THIS IS THE KEY LOGIC ---
+            // 1. We use the ID from the token to fetch the full user document from the database.
+            const managerDetails = await User.findById(managerInfoFromToken.id);
+
+            // 2. We can now safely access the 'name' field from the fetched document.
+            //    A fallback is included in case the manager's document is somehow not found.
+            const managerName = managerDetails ? managerDetails.name : 'Your Manager';
+
+            await sendEmail({
+                to: staff.email,
+                subject: `Action Required: Your Shift on ${new Date(shift.date).toLocaleDateString()} Was Rejected`,
+                template: 'shift_rejected',
+                context: {
+                    username: staff.name,
+                    managerName: managerName, // Use the name we just fetched
+                    date: new Date(shift.date).toDateString(),
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                    reason: reason,
+                },
+            });
+        }
+
+        res.status(200).json({ message: 'Shift rejected successfully', shift });
+
+    } catch (error) {
+        console.error('Error rejecting shift:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};

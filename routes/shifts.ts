@@ -1,5 +1,5 @@
 import express from 'express';
-import { createShift, getShifts, getMyShift, getShiftById, updateShift, deleteShift, getOpenShifts, claimOpenShift, createOpenShift, clockInShift, clockOutShift, markShiftAsCompleted } from '../controllers/shiftController';
+import { createShift, getShifts, getMyShift, getShiftById, updateShift, rejectShift, deleteShift, getOpenShifts, claimOpenShift, createOpenShift, clockInShift, clockOutShift, markShiftAsCompleted } from '../controllers/shiftController';
 import { authMiddleware } from '../middleware/auth';
 import { upload } from '../middleware/uploads';
 
@@ -24,6 +24,7 @@ router.post('/:id/clock-out', authMiddleware, clockOutShift);
 
 router.patch('/:id/complete', authMiddleware, markShiftAsCompleted);
 router.patch('/:id/approve', authMiddleware, approveShift);
+router.patch('/:id/reject', authMiddleware, rejectShift);
 
 
 router.get('/:id', authMiddleware, getShiftById);
