@@ -148,91 +148,102 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 
 export const registerStaffWithToken = async (req: Request, res: Response): Promise<void> => {
-  try{
-    const { token } = req.query;
-    const { name, password } = req.body;
+    try {
+        const { token } = req.query;
+        const { name, password } = req.body;
 
-    if (!token || typeof token !== 'string') {
-      res.status(400).json({ message: 'Invalid or missing token' });
-      return;
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ message: 'Invalid or missing token' });
+            return;
+        }
+
+        if (!name || !password) {
+            res.status(400).json({ message: 'Name and password are required' });
+            return;
+        }
+
+        const invite = await InviteToken.findOneAndDelete({ token });
+
+        if (!invite) {
+            res.status(400).json({ message: 'Invalid invite token' });
+            return;
+        }
+
+        if (invite.expiresAt < new Date()) {
+            res.status(400).json({ message: 'Invite token has expired' });
+            return;
+        }
+
+        const existingUser = await User.findOne({ email: invite.email });
+        if (existingUser) {
+            res.status(409).json({ message: 'User already exists with this email' });
+            return;
+        }
+
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+        const staff = new Staff({
+            name,
+            email: invite.email,
+            password: hashedPassword,
+            role: 'staff',
+            organizationId: invite.organizationId,
+            managerId: invite.createdBy,
+        });
+
+        await staff.save();
+
+        // Update the invite status
+        await Invite.updateOne(
+            { email: invite.email },
+            { $set: { stage: 'accepted' } }
+        );
+
+        const payload = {
+            id: (staff.id as import('mongoose').Types.ObjectId).toString(),
+            email: staff.email,
+            role: 'staff',
+            organizationId: (staff.organizationId as import('mongoose').Types.ObjectId).toString(),
+            managerId: (staff.managerId as import('mongoose').Types.ObjectId).toString(),
+        };
+
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        // Set tokens as HTTP-only cookies
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
+        });
+
+        res.status(201).json({
+            message: 'Staff registered successfully',
+            user: {
+                id: staff.id,
+                name: staff.name,
+                email: staff.email,
+                role: staff.role
+            },
+            organizationId: invite.organizationId,
+        });
+
+        try {
+            await sendEmail({
+                to: staff.email,
+                subject: 'Welcome to our System',
+                template: 'staff_registration_success',
+                context: { username: staff.name },
+            });
+        } catch (emailErr) {
+            console.error('Email sending failed:', emailErr);
+        }
+
+    } catch (error) {
+        console.error('Error registering staff with token:', error);
+        res.status(500).json({ message: 'Error registering staff' });
     }
-
-    if(!name || !password){
-      res.status(400).json({ message: 'Name and password are required' });
-      return;
-    }
-
-    const invite = await InviteToken.findOneAndDelete({ token });
-
-    if (!invite){
-      res.status(400).json({ message: 'Invalid invite token' });
-      return;
-    }
-
-    if (invite.expiresAt < new Date()) {
-      res.status(400).json({ message: 'Invite token has expired' });
-      return;
-    }
-
-    const existingUser = await User.findOne({ email: invite.email });
-    if (existingUser) {
-      res.status(409).json({ message: 'User already exists with this email' });
-      return;
-    }
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-
-
-    const staff = new Staff({
-      name,
-      email: invite.email,
-      password: hashedPassword,
-      role: 'staff', 
-      organizationId: invite.organizationId,
-      managerId: invite.createdBy,
-      
-    });
-
-    await staff.save();
-
-    // Update the invite status
-    await Invite.updateOne(
-      { email: invite.email },
-      { $set: { stage: 'accepted' } }
-    );
-
-
-    const payload = {
-      id: (staff.id as import('mongoose').Types.ObjectId).toString(),
-      email: staff.email,
-      role: 'staff',
-      organizationId: (staff.organizationId as import('mongoose').Types.ObjectId).toString(),
-      managerId: (staff.managerId as import('mongoose').Types.ObjectId).toString(),
-    };
-
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: '/',
-    });
-    res.status(201).json({
-      message: 'Staff registered successfully',
-      accessToken,
-      refreshToken,
-      organizationId: invite.organizationId,
-    });
-
-
-  } catch (error) {
-    console.error('Error registering staff with token:', error);
-    res.status(500).json({ message: 'Error registering staff' });
-  }
 }
 
 
@@ -399,13 +410,17 @@ export const validateResetToken = async (req: Request, res: Response): Promise<v
 
 // POST /auth/logout – Logout user
 export const logout = async (req: Request, res: Response) => {
-  try {
-    res.clearCookie('refreshToken');
-    res.status(200).json({ message: 'Logged out successfully' });
-    return;
-  } catch (err) {
-    console.error('Logout error:', err);
-    res.status(500).json({ error: 'Logout failed' });
-    return;
-  }
+    try {
+        // Clear both cookies
+        res.clearCookie('accessToken');
+
+        res.clearCookie('refreshToken');
+
+        res.status(200).json({ message: 'Logged out successfully' });
+        return;
+    } catch (err) {
+        console.error('Logout error:', err);
+        res.status(500).json({ error: 'Logout failed' });
+        return;
+    }
 };

@@ -3,6 +3,8 @@ import xlsx from 'xlsx';
 import { Staff } from '../models/Staff';
 
 import { Shift } from '../models/Shift';
+import {sendEmail} from "../utils/email";
+import {Types} from "mongoose";
 
 
 
@@ -42,11 +44,35 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
             createdBy: user.id,
         });
 
+        const staff = await Staff.findById(assignedTo);
+        if (staff && staff.email) {
+            try {
+                await sendEmail({
+                    to: staff.email,
+                    subject: 'New Shift Assigned to You',
+                    template: 'shift_schedule_created',
+                    context: {
+                        shifts: [{
+                            name: shift.name,
+                            date: shift.date.toDateString(),
+                            startTime: shift.startTime,
+                            endTime: shift.endTime,
+                            location: shift.location,
+                            notes: shift.notes
+                        }],
+                        totalShifts: 1
+                    },
+                });
+            } catch (emailErr) {
+                console.error('Failed to send shift notification email:', emailErr);
+            }
+        }
+
         res.status(201).json({
             message: 'Shift created successfully',
             shift: {
                 ...shift.toObject(),
-                // Add any additional fields you want to return
+                notificationSent: !!staff?.email
             }
         });
     } catch (error) {
@@ -141,7 +167,8 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
         const user = req.user;
         const { id } = req.params;
 
-        const shift = await Shift.findById(id);
+        // Populate the original shift to get staff details
+        const shift = await Shift.findById(id).populate<{ assignedTo: { _id: Types.ObjectId, email: string, name: string } }>('assignedTo');
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
             return;
@@ -155,24 +182,104 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
 
         const { staff, date, startTime, endTime, location, notes } = req.body;
 
-        // Update the shift
+        // Get the original assigned staff before updating
+        const originalAssignedTo = shift.assignedTo?._id?.toString();
+        const newAssignedTo = staff?.toString();
+
+        // Update the shift and populate the assigned staff
         const updatedShift = await Shift.findByIdAndUpdate(id, {
-            assignedTo: staff, // Note: frontend sends 'staff', not 'assignedTo'
+            assignedTo: staff,
             date: new Date(date),
             startTime,
             endTime,
             location,
             notes,
         }, { new: true })
-        .populate('assignedTo', 'name email')
-        .populate('createdBy', 'name email');
+            .populate<{ assignedTo: { _id: Types.ObjectId, email: string, name: string } }>('assignedTo', 'email name')
+            .populate('createdBy', 'name email');
 
-        res.status(200).json({ message: 'Shift updated successfully', shift: updatedShift });
+        if (!updatedShift) {
+            res.status(404).json({ message: 'Shift not found after update' });
+            return;
+        }
+
+        // Check if we should send notifications
+        const shouldNotify = (
+            // Staff assignment changed
+            (newAssignedTo && originalAssignedTo !== newAssignedTo) ||
+            // Shift details changed
+            shift.date.toString() !== new Date(date).toString() ||
+            shift.startTime !== startTime ||
+            shift.endTime !== endTime ||
+            shift.location !== location
+        );
+
+        type EmailTemplate = "shift_updated" | "welcome_email" | "reset_password" | "permission_updated" | "invite_staff" | "shift_reminder" | "staff_registration_success" | "shift_schedule_created" | 'shift_cancelled';
+
+        // Send notification to new assigned staff if changes were made
+        if (shouldNotify && updatedShift.assignedTo && updatedShift.assignedTo.email) {
+            try {
+                const shiftUpdate = {
+                    date: updatedShift.date.toDateString(),
+                    oldDate: shift.date.toDateString(),
+                    newDate: updatedShift.date.toDateString(),
+                    oldStartTime: shift.startTime,
+                    newStartTime: updatedShift.startTime,
+                    oldEndTime: shift.endTime,
+                    newEndTime: updatedShift.endTime,
+                    oldLocation: shift.location,
+                    newLocation: updatedShift.location
+                };
+
+
+                const emailPayload = {
+                    to: updatedShift.assignedTo.email,
+                    subject: 'Your Shift Has Been Updated',
+                    template: "shift_updated" as EmailTemplate,
+                    context: {
+                        username: updatedShift.assignedTo.name || 'there',
+                        shifts: [shiftUpdate]
+                    },
+                };
+                await sendEmail(emailPayload);
+            } catch (emailErr) {
+                console.error('Failed to send shift update notification:', emailErr);
+            }
+        }
+
+        // Notify previous staff if assignment changed
+        if (originalAssignedTo && originalAssignedTo !== newAssignedTo && shift.assignedTo && shift.assignedTo.email) {
+            try {
+
+                const emailPayload = {
+                    to: shift.assignedTo.email,
+                    subject: 'You Have Been Removed from a Shift',
+                    template: "shift_cancelled" as EmailTemplate,
+                    context: {
+                        username: shift.assignedTo.name || 'there',
+                        date: shift.date.toDateString(),
+                        startTime: shift.startTime,
+                        endTime: shift.endTime,
+                        location: shift.location || 'Not specified',
+                        reason: 'You have been unassigned from this shift'
+                    },
+                };
+                await sendEmail(emailPayload);
+            } catch (emailErr) {
+                console.error('Failed to send shift removal notification:', emailErr);
+            }
+        }
+
+        res.status(200).json({
+            message: 'Shift updated successfully',
+            shift: updatedShift,
+            notificationSent: shouldNotify && !!updatedShift.assignedTo?.email
+        });
     } catch (error) {
         console.error('Error updating shift:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-}
+};
 
 
 export const deleteShift = async (req: Request, res: Response, next: NextFunction) => {
@@ -483,53 +590,64 @@ export const getOpenShifts = async (req: Request, res: Response, next: NextFunct
 
 
 export const clockInShift = async (req: Request, res: Response, next: NextFunction) => {
-    try{
-        const user = req.user
+    try {
+        const user = req.user;
 
-        if(user.role !== 'staff') {
-            res.status(403).json({ message: 'Forbidden, Only staff can clock in' });
-            return;
+        if (user.role !== 'staff') {
+            res.status(403).json({ message: 'Forbidden: Only staff can clock in' });
+            return
         }
 
         const shift = await Shift.findById(req.params.id);
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
-            return;
+            return
         }
 
-        //Prevent access across organizations
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
-            res.status(403).json({ message: 'Forbidden: Different Organization' });
-            return;
+            res.status(403).json({ message: 'Forbidden: Different organization' });
+            return
         }
 
-        //Allow if
-        if(shift.assignedTo.toString() !== user.id.toString()) {
+        if (shift.assignedTo.toString() !== user.id.toString()) {
             res.status(403).json({ message: 'Forbidden: You are not assigned to this shift' });
-            return;
+            return
         }
-        if(shift.clockInTime) {
+
+        if (shift.clockInTime) {
             res.status(403).json({ message: 'Forbidden: You have already clocked in' });
-            return;
+            return
         }
 
         const now = new Date();
-        const shiftDate = new Date(shift.date);
-        if (now < shiftDate) {
-            res.status(403).json({ message: 'Forbidden: You cannot clock in before the shift date' });
-            return;
+
+        // Combine shift.date and shift.startTime to get shift start datetime
+        const [hour, minute] = shift.startTime.split(':').map(Number);
+        const shiftStart = new Date(shift.date);
+        shiftStart.setHours(hour, minute, 0, 0);
+
+
+
+        // Allow clock-in only if within 1 hour before shift start
+        const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
+        if (now < oneHourBeforeShift) {
+            res.status(403).json({ message: 'Forbidden: You can only clock in within 1 hour before the shift start time' });
+            return
         }
 
         shift.clockInTime = now;
         shift.status = 'in-progress';
         await shift.save();
 
-        res.status(200).json({ message: 'Clocked in successfully', shift: Shift });
+        res.status(200).json({ message: 'Clocked in successfully', shift });
+        return
     } catch (error) {
         console.error('Error clocking in shift:', error);
         res.status(500).json({ message: 'Internal server error' });
+        return
     }
-}
+};
+
 
 
 export const clockOutShift = async (req: Request, res: Response) => {
@@ -590,7 +708,7 @@ export const clockOutShift = async (req: Request, res: Response) => {
 export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) => {
     try {
         const user = req.user;
-        
+
         if (!user || user.role !== 'manager') {
             res.status(403).json({ message: 'Forbidden: Only managers can upload shifts' });
             return;
@@ -613,12 +731,13 @@ export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) =>
 
         const shiftsToInsert = [];
         const errors = [];
+        const staffShiftMap = new Map<string, any[]>();
 
         for (const [index, row] of data.entries()) {
             try {
-                const { staffEmail, date, startTime, endTime, role, location, notes } = row as any;
+                const { name, staffEmail, date, startTime, endTime, role, location, notes } = row as any;
 
-                if (!staffEmail || !date || !startTime || !endTime) {
+                if (!name || !staffEmail || !date || !startTime || !endTime) {
                     errors.push(`Row ${index + 2}: Missing required fields`);
                     continue;
                 }
@@ -633,7 +752,8 @@ export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) =>
                     continue;
                 }
 
-                shiftsToInsert.push({
+                const shiftData = {
+                    name,
                     organizationId: user.organizationId,
                     assignedTo: staff._id,
                     date: new Date(date),
@@ -644,7 +764,15 @@ export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) =>
                     notes: notes || '',
                     status: 'assigned',
                     createdBy: user.id,
-                });
+                };
+                shiftsToInsert.push(shiftData);
+
+                // Add shift to staff's notification map
+                if (!staffShiftMap.has(staffEmail)) {
+                    staffShiftMap.set(staffEmail, []);
+                }
+                staffShiftMap.get(staffEmail)?.push(shiftData);
+
             } catch (err) {
                 if (err instanceof Error) {
                     errors.push(`Row ${index + 2}: ${err.message}`);
@@ -655,26 +783,51 @@ export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) =>
         }
 
         if (shiftsToInsert.length === 0) {
-            res.status(400).json({ 
+            res.status(400).json({
                 message: 'No valid shifts to import',
-                errors 
+                errors
             });
             return;
         }
 
         const result = await Shift.insertMany(shiftsToInsert);
 
-        res.status(201).json({ 
+        res.status(201).json({
             message: 'Shifts uploaded successfully',
             shifts: result.length,
             errors: errors.length > 0 ? errors : undefined
         });
+
+        try{
+            for (const [email, shifts] of staffShiftMap.entries()){
+                await sendEmail({
+                    to: email,
+                    subject: 'New Shifts Assigned',
+                    template: 'shift_schedule_created',
+                    context: {
+                        shifts: shifts.map(shift => ({
+                            name: shift.name,
+                            date: shift.date.toDateString(),
+                            startTime: shift.startTime,
+                            endTime: shift.endTime,
+                            location: shift.location,
+                            notes: shift.notes
+                        })),
+                        totalShifts: shifts.length
+                    },
+                });
+
+            }
+        } catch (emailErr) {
+            console.error('Failed to send some shift notification emails:', emailErr);
+        }
 
     } catch (error) {
         console.error('Error uploading shifts:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };
+
 
 
 
