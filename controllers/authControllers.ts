@@ -218,6 +218,9 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
             maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
         });
 
+        const org = await Organization.findById(invite.organizationId);
+        const organizationName = org?.name || 'Hwil';
+
         res.status(201).json({
             message: 'Staff registered successfully',
             user: {
@@ -227,14 +230,19 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
                 role: staff.role
             },
             organizationId: invite.organizationId,
+            organizationName,
         });
+
 
         try {
             await sendEmail({
                 to: staff.email,
                 subject: 'Welcome to our System',
                 template: 'staff_registration_success',
-                context: { username: staff.name },
+                context: {
+                    username: staff.name,
+                    Organization: organizationName,
+                },
             });
         } catch (emailErr) {
             console.error('Email sending failed:', emailErr);
