@@ -7,6 +7,7 @@ import { connectDB } from '../dbconfig';
 
 dotenv.config();
 
+import '../job/sendShiftReminders'
 const debug = require('debug')('hwil:server');
 
 const port = normalizePort(process.env.PORT || '3000');
