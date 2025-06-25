@@ -621,27 +621,59 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 
         const now = new Date();
 
-        // Match the exact logic from shiftReminder
-        const [hour, minute] = shift.startTime.split(':').map(Number);
-        const shiftStart = new Date(shift.date);
-        shiftStart.setHours(hour, minute, 0, 0);
-
-        // Debug logging
-        console.log('Clock-in attempt:', {
-            currentTime: now.toISOString(),
-            currentLocal: now.toLocaleString(),
-            shiftDate: shift.date,
-            shiftTime: shift.startTime,
-            shiftStart: shiftStart.toISOString(),
-            shiftStartLocal: shiftStart.toLocaleString(),
-            timeUntilShift: Math.round((shiftStart.getTime() - now.getTime()) / 1000 / 60) + ' minutes'
+        // Get timezone offset
+        const timezoneOffset = now.getTimezoneOffset();
+        console.log('Timezone Debug:', {
+            serverTime: now.toISOString(),
+            serverLocalTime: now.toString(),
+            timezoneOffset: timezoneOffset,
+            shiftDateFromDB: shift.date,
+            shiftDateType: typeof shift.date,
+            shiftStartTime: shift.startTime
         });
 
-        // Allow clock-in only if within 1 hour before shift start
+        // Parse the shift date - ensure it's a Date object
+        let shiftDate = shift.date;
+        if (typeof shiftDate === 'string') {
+            shiftDate = new Date(shiftDate);
+        }
+
+        // Parse hours and minutes
+        const [hour, minute] = shift.startTime.split(':').map(Number);
+
+        // Create shift start datetime
+        const shiftStart = new Date(shiftDate);
+        shiftStart.setHours(hour, minute, 0, 0);
+
+        // Log all date calculations
+        console.log('Date Calculations:', {
+            originalShiftDate: shift.date,
+            parsedShiftDate: shiftDate.toISOString(),
+            shiftStartTime: `${hour}:${minute}`,
+            calculatedShiftStart: shiftStart.toISOString(),
+            calculatedShiftStartLocal: shiftStart.toString(),
+            nowISO: now.toISOString(),
+            nowLocal: now.toString()
+        });
+
+        // Calculate one hour before shift
         const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
 
+        // Calculate time differences
+        const msUntilShift = shiftStart.getTime() - now.getTime();
+        const msUntilCanClockIn = oneHourBeforeShift.getTime() - now.getTime();
+
+        console.log('Time Differences:', {
+            msUntilShift: msUntilShift,
+            minutesUntilShift: Math.round(msUntilShift / 60000),
+            msUntilCanClockIn: msUntilCanClockIn,
+            minutesUntilCanClockIn: Math.round(msUntilCanClockIn / 60000),
+            oneHourBeforeShift: oneHourBeforeShift.toISOString(),
+            canClockIn: now >= oneHourBeforeShift
+        });
+
         if (now < oneHourBeforeShift) {
-            const minutesUntilAllowed = Math.ceil((oneHourBeforeShift.getTime() - now.getTime()) / (60 * 1000));
+            const minutesUntilAllowed = Math.ceil(msUntilCanClockIn / (60 * 1000));
 
             let timeMessage = '';
             if (minutesUntilAllowed > 60) {
@@ -656,15 +688,21 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
                 message: `You can clock in ${timeMessage} from now (within 1 hour before shift start)`,
                 details: {
                     currentTime: now.toISOString(),
+                    currentTimeLocal: now.toString(),
+                    shiftDate: shift.date,
+                    shiftStartTime: shift.startTime,
+                    calculatedShiftStart: shiftStart.toISOString(),
+                    calculatedShiftStartLocal: shiftStart.toString(),
                     earliestClockIn: oneHourBeforeShift.toISOString(),
-                    shiftStart: shiftStart.toISOString(),
-                    minutesUntilShift: Math.round((shiftStart.getTime() - now.getTime()) / 1000 / 60)
+                    earliestClockInLocal: oneHourBeforeShift.toString(),
+                    minutesUntilShift: Math.round(msUntilShift / 60000),
+                    minutesUntilCanClockIn: Math.round(msUntilCanClockIn / 60000)
                 }
             });
             return;
         }
 
-        // Check if trying to clock in too late (more than 2 hours after shift start)
+        // Check if trying to clock in too late
         const twoHoursAfterShift = new Date(shiftStart.getTime() + 2 * 60 * 60 * 1000);
         if (now > twoHoursAfterShift) {
             res.status(403).json({
@@ -688,7 +726,7 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             clockInDetails: {
                 clockedInAt: now.toISOString(),
                 shiftStartTime: shiftStart.toISOString(),
-                minutesAfterShiftStart: Math.round((now.getTime() - shiftStart.getTime()) / 1000 / 60)
+                minutesBeforeShift: Math.round((shiftStart.getTime() - now.getTime()) / 60000)
             }
         });
         return;
