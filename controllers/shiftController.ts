@@ -52,8 +52,8 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
                     subject: 'New Shift Assigned to You',
                     template: 'shift_schedule_created',
                     context: {
+                        username: staff.name,
                         shifts: [{
-                            name: shift.name,
                             date: shift.date.toDateString(),
                             startTime: shift.startTime,
                             endTime: shift.endTime,
@@ -621,55 +621,58 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 
         const now = new Date();
 
-        // Parse shift date and time properly
-        const shiftDate = new Date(shift.date);
+        // Match the exact logic from shiftReminder
         const [hour, minute] = shift.startTime.split(':').map(Number);
-
-        // Create shift start datetime in UTC
-        const shiftStart = new Date(Date.UTC(
-            shiftDate.getUTCFullYear(),
-            shiftDate.getUTCMonth(),
-            shiftDate.getUTCDate(),
-            hour,
-            minute,
-            0,
-            0
-        ));
-
-        // Allow clock-in only if within 1 hour before shift start
-        const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
+        const shiftStart = new Date(shift.date);
+        shiftStart.setHours(hour, minute, 0, 0);
 
         // Debug logging
         console.log('Clock-in attempt:', {
             currentTime: now.toISOString(),
+            currentLocal: now.toLocaleString(),
             shiftDate: shift.date,
-            shiftStartTime: shift.startTime,
-            calculatedShiftStart: shiftStart.toISOString(),
-            oneHourBefore: oneHourBeforeShift.toISOString(),
-            canClockIn: now >= oneHourBeforeShift
+            shiftTime: shift.startTime,
+            shiftStart: shiftStart.toISOString(),
+            shiftStartLocal: shiftStart.toLocaleString(),
+            timeUntilShift: Math.round((shiftStart.getTime() - now.getTime()) / 1000 / 60) + ' minutes'
         });
+
+        // Allow clock-in only if within 1 hour before shift start
+        const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
 
         if (now < oneHourBeforeShift) {
             const minutesUntilAllowed = Math.ceil((oneHourBeforeShift.getTime() - now.getTime()) / (60 * 1000));
+
+            let timeMessage = '';
+            if (minutesUntilAllowed > 60) {
+                const hours = Math.floor(minutesUntilAllowed / 60);
+                const mins = minutesUntilAllowed % 60;
+                timeMessage = `${hours}h ${mins}m`;
+            } else {
+                timeMessage = `${minutesUntilAllowed} minute${minutesUntilAllowed !== 1 ? 's' : ''}`;
+            }
+
             res.status(403).json({
-                message: `You can clock in ${minutesUntilAllowed} minutes from now (within 1 hour before shift start)`,
+                message: `You can clock in ${timeMessage} from now (within 1 hour before shift start)`,
                 details: {
                     currentTime: now.toISOString(),
                     earliestClockIn: oneHourBeforeShift.toISOString(),
-                    shiftStart: shiftStart.toISOString()
+                    shiftStart: shiftStart.toISOString(),
+                    minutesUntilShift: Math.round((shiftStart.getTime() - now.getTime()) / 1000 / 60)
                 }
             });
             return;
         }
 
-        // Check if trying to clock in too late (optional - add if needed)
+        // Check if trying to clock in too late (more than 2 hours after shift start)
         const twoHoursAfterShift = new Date(shiftStart.getTime() + 2 * 60 * 60 * 1000);
         if (now > twoHoursAfterShift) {
             res.status(403).json({
                 message: 'Cannot clock in more than 2 hours after shift start time',
                 details: {
                     currentTime: now.toISOString(),
-                    shiftStart: shiftStart.toISOString()
+                    shiftStart: shiftStart.toISOString(),
+                    latestClockIn: twoHoursAfterShift.toISOString()
                 }
             });
             return;
@@ -684,7 +687,8 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             shift,
             clockInDetails: {
                 clockedInAt: now.toISOString(),
-                shiftStartTime: shiftStart.toISOString()
+                shiftStartTime: shiftStart.toISOString(),
+                minutesAfterShiftStart: Math.round((now.getTime() - shiftStart.getTime()) / 1000 / 60)
             }
         });
         return;
@@ -695,13 +699,12 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
     }
 };
 
+export const clockOutShift = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const user = req.user;
 
-
-export const clockOutShift = async (req: Request, res: Response) => {
-    try{
-        const user = req.user
-        if(user.role !== 'staff') {
-            res.status(403).json({ message: 'Forbidden, Only staff can clock out' });
+        if (user.role !== 'staff') {
+            res.status(403).json({ message: 'Forbidden: Only staff can clock out' });
             return;
         }
 
@@ -710,47 +713,68 @@ export const clockOutShift = async (req: Request, res: Response) => {
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
-        //Prevent access across organizations
+
         if (shift.organizationId.toString() !== user.organizationId.toString()) {
-            res.status(403).json({ message: 'Forbidden: Different Organization' });
+            res.status(403).json({ message: 'Forbidden: Different organization' });
             return;
         }
-        //Allow if
-        if(shift.assignedTo.toString() !== user.id.toString()) {
+
+        if (shift.assignedTo.toString() !== user.id.toString()) {
             res.status(403).json({ message: 'Forbidden: You are not assigned to this shift' });
             return;
         }
-        if(shift.clockOutTime) {
+
+        if (!shift.clockInTime) {
+            res.status(403).json({ message: 'Forbidden: You have not clocked in yet' });
+            return;
+        }
+
+        if (shift.clockOutTime) {
             res.status(403).json({ message: 'Forbidden: You have already clocked out' });
             return;
         }
 
         const now = new Date();
-        shift.clockOutTime = now;
+        const clockInTime = new Date(shift.clockInTime);
+        const fifteenMinutesAfterClockIn = new Date(clockInTime.getTime() + 15 * 60 * 1000);
 
-        // Ensure clockInTime is defined before calculating worked hours
-        if (!shift.clockInTime) {
-            res.status(400).json({ message: 'Cannot clock out: clock in before clocking out.' });
+        // Check if at least 15 minutes have passed since clock in
+        if (now < fifteenMinutesAfterClockIn) {
+            const minutesRemaining = Math.ceil((fifteenMinutesAfterClockIn.getTime() - now.getTime()) / (60 * 1000));
+            res.status(403).json({
+                message: `You can clock out in ${minutesRemaining} minute${minutesRemaining !== 1 ? 's' : ''} (minimum 15 minutes after clock in)`,
+                details: {
+                    clockInTime: clockInTime.toISOString(),
+                    earliestClockOut: fifteenMinutesAfterClockIn.toISOString(),
+                    currentTime: now.toISOString()
+                }
+            });
             return;
         }
 
-        // Calculate worked hours
-        const durationMs = now.getTime() - shift.clockInTime.getTime();
-        const hours = durationMs / (1000 * 60 * 60);
-        shift.workedHours = parseFloat(hours.toFixed(2));
+        shift.clockOutTime = now;
         shift.status = 'completed';
         await shift.save();
 
+        // Calculate hours worked
+        const hoursWorked = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-        res.status(200).json({ message: 'Clocked out successfully', shift });
-
-
+        res.status(200).json({
+            message: 'Clocked out successfully',
+            shift,
+            clockOutDetails: {
+                clockedOutAt: now.toISOString(),
+                hoursWorked: hoursWorked.toFixed(2),
+                minutesWorked: Math.round((now.getTime() - clockInTime.getTime()) / (1000 * 60))
+            }
+        });
+        return;
     } catch (error) {
         console.error('Error clocking out shift:', error);
-        res.status(500).json({ message: 'Internal server error: Error clocking out' });
+        res.status(500).json({ message: 'Internal server error' });
+        return;
     }
-}
-
+};
 
 export const uploadShiftFromSpreadsheet = async (req: Request, res: Response) => {
     try {
