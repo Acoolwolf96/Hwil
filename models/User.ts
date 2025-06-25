@@ -8,6 +8,7 @@ export interface IUser extends Document {
   password: string;
   role: "manager" | "staff";
   organizationId: mongoose.Types.ObjectId;
+  createdAt: Date;
   
 }
 
@@ -34,7 +35,7 @@ const userSchema = new Schema<IUser>({
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Organization",
-  },
+  }
 });
 
 

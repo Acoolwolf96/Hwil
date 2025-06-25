@@ -15,78 +15,83 @@ const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
 
 // POST /auth/register – Manager onboarding
 export const register = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, email, password, organizationName } = req.body;
-
-    if (!name || !email || !password || !organizationName) {
-      res.status(400).json({ error: 'Missing required fields' });
-        return;
-    }
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      res.status(409).json({ error: 'User already exists' });
-        return;
-    }
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: 'manager',
-    });
-
-    const savedUser = await user.save();
-
-    const organization = new Organization({
-      name: organizationName,
-      createdBy: savedUser._id,
-    });
-
-    const savedOrg = await organization.save();
-
-    savedUser.organizationId = savedOrg._id as import('mongoose').Types.ObjectId;
-    await savedUser.save();
-
-    const payload = {
-      id: (savedUser._id as import('mongoose').Types.ObjectId).toString(),
-      email: savedUser.email,
-      role: savedUser.role,
-      organizationId: (savedOrg._id as import('mongoose').Types.ObjectId).toString(),
-    };
-
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(payload);
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.status(201).json({
-      message: 'Manager and organization created',
-      accessToken,
-      organizationId: savedOrg._id,
-    });
     try {
-      await sendEmail({
-        to: email,
-        subject: 'Welcome to our System',
-        template: 'welcome_email',
-        context: { username: name },
-      });
-    } catch (emailErr) {
-      console.error('Email sending failed:', emailErr);
+        const { name, email, password, organizationName } = req.body;
+
+        if (!name || !email || !password || !organizationName) {
+            res.status(400).json({ error: 'Missing required fields' });
+            return;
+        }
+
+        const normalizedEmail = email.toLowerCase();
+
+        // Check if email already exists (case-insensitive)
+        const existingUser = await User.findOne({ email: normalizedEmail });
+        if (existingUser) {
+            res.status(409).json({ error: 'User already exists' });
+            return;
+        }
+
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+        const user = new User({
+            name,
+            email: normalizedEmail,
+            password: hashedPassword,
+            role: 'manager',
+        });
+
+        const savedUser = await user.save();
+
+        const organization = new Organization({
+            name: organizationName,
+            createdBy: savedUser._id,
+        });
+
+        const savedOrg = await organization.save();
+
+        savedUser.organizationId = savedOrg._id as import('mongoose').Types.ObjectId;
+        await savedUser.save();
+
+        const payload = {
+            id: (savedUser._id as import('mongoose').Types.ObjectId).toString(),
+            email: savedUser.email,
+            role: savedUser.role,
+            organizationId: (savedOrg._id as import('mongoose').Types.ObjectId).toString(),
+        };
+
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        res.status(201).json({
+            message: 'Manager and organization created',
+            accessToken,
+            organizationId: savedOrg._id,
+        });
+
+        try {
+            await sendEmail({
+                to: normalizedEmail,
+                subject: 'Welcome to our System',
+                template: 'welcome_email',
+                context: { username: name },
+            });
+        } catch (emailErr) {
+            console.error('Email sending failed:', emailErr);
+        }
+    } catch (err) {
+        console.error('Registration error:', err);
+        res.status(500).json({ error: 'Registration failed' });
     }
-  } catch (err) {
-    console.error('Registration error:', err);
-    res.status(500).json({ error: 'Registration failed' });
-    return;
-  }
 };
+
 
 // POST /auth/login – Authenticate user
 export const login = async (req: Request, res: Response): Promise<void> => {
