@@ -621,12 +621,11 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 
         const now = new Date();
 
-        // Get timezone offset
-        const timezoneOffset = now.getTimezoneOffset();
+        // Debug logs
         console.log('Timezone Debug:', {
             serverTime: now.toISOString(),
             serverLocalTime: now.toString(),
-            timezoneOffset: timezoneOffset,
+            timezoneOffset: now.getTimezoneOffset(),
             shiftDateFromDB: shift.date,
             shiftDateType: typeof shift.date,
             shiftStartTime: shift.startTime
@@ -641,9 +640,9 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
         // Parse hours and minutes
         const [hour, minute] = shift.startTime.split(':').map(Number);
 
-        // Create shift start datetime
+        // Create shift start datetime in UTC
         const shiftStart = new Date(shiftDate);
-        shiftStart.setHours(hour, minute, 0, 0);
+        shiftStart.setUTCHours(hour, minute, 0, 0);
 
         // Log all date calculations
         console.log('Date Calculations:', {
