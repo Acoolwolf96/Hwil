@@ -112,7 +112,7 @@ export const getMyShift = async (req: Request, res: Response, next: NextFunction
 
         const shifts = await Shift.find({
             assignedTo: user.id,
-            date: { $gte: new Date() }
+            organizationId: user.organizationId
         })
             .populate('organizationId')
             .sort({ date: 1, startTime: 1 });
@@ -120,7 +120,7 @@ export const getMyShift = async (req: Request, res: Response, next: NextFunction
         // Add timezone info to each shift
         const shiftsWithTimezone = shifts.map(shift => {
             const organization = shift.organizationId as any;
-            const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+            const timezone = shift.timezone || organization?.timezone || 'Europe/Helsinki';
 
             return {
                 ...shift.toObject(),
@@ -638,7 +638,7 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
 
         // Get timezone - use shift timezone, organization timezone, or default
         const organization = shift.organizationId as any;
-        const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+        const timezone = shift.timezone || organization?.timezone || 'Europe/Helsinki';
 
         // Current time
         const now = moment();
@@ -787,7 +787,7 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
         await shift.save();
 
         const organization = shift.organizationId as any;
-        const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+        const timezone = shift.timezone || organization?.timezone || 'Europe/Helsinki';
 
         res.status(200).json({
             message: 'Clocked out successfully',

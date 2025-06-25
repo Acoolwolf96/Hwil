@@ -30,7 +30,7 @@ const sendShiftReminders = async () => {
 
         for (const shift of shifts) {
             const organization = shift.organizationId as any;
-            const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+            const timezone = shift.timezone || organization?.timezone || 'Europe/Helsinki';
 
             console.log(`\n🔹 Processing shift ${shift._id}:`);
             console.log(`   Date: ${shift.date}`);
