@@ -1,20 +1,19 @@
+// services/shiftReminder.ts
 import cron from 'node-cron';
+import moment from 'moment-timezone';
 import { Shift } from '../models/Shift';
 import { Staff } from '../models/Staff';
 import { sendEmail } from '../utils/email';
 
 const sendShiftReminders = async () => {
     try {
-        console.log('🔍 Starting shift reminder check at:', new Date().toISOString());
+        console.log('🔍 Starting shift reminder check at:', moment().format());
 
-        const now = new Date();
-        const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
+        const now = moment();
 
-        // Since date is stored as Date object, we need to query for today's shifts
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
+        // Find all shifts for today across all timezones
+        const startOfDay = moment().startOf('day').toDate();
+        const endOfDay = moment().endOf('day').add(1, 'day').toDate(); // Include next day for timezone differences
 
         const shifts = await Shift.find({
             date: {
@@ -23,28 +22,34 @@ const sendShiftReminders = async () => {
             },
             reminderSent: false,
             status: 'assigned',
-        }).populate('assignedTo');
+        })
+            .populate('assignedTo')
+            .populate('organizationId');
 
-        console.log(`📊 Found ${shifts.length} shifts for today`);
+        console.log(`📊 Found ${shifts.length} potential shifts to check`);
 
         for (const shift of shifts) {
+            const organization = shift.organizationId as any;
+            const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+
             console.log(`\n🔹 Processing shift ${shift._id}:`);
             console.log(`   Date: ${shift.date}`);
             console.log(`   Time: ${shift.startTime} - ${shift.endTime}`);
+            console.log(`   Timezone: ${timezone}`);
             console.log(`   Status: ${shift.status}`);
 
-            const [hour, minute] = shift.startTime.split(':').map(Number);
+            // Create shift start time in the shift's timezone
+            const shiftDateStr = moment(shift.date).format('YYYY-MM-DD');
+            const shiftStartLocal = moment.tz(`${shiftDateStr} ${shift.startTime}`, 'YYYY-MM-DD HH:mm', timezone);
+            const shiftStartUTC = shiftStartLocal.toDate();
 
-            // Since shift.date is already a Date object at midnight, we just set the time
-            const shiftStart = new Date(shift.date);
-            shiftStart.setHours(hour, minute, 0, 0);
-
-            console.log(`   Shift starts at: ${shiftStart.toISOString()}`);
-            console.log(`   Current time: ${now.toISOString()}`);
-            console.log(`   Time until shift: ${Math.round((shiftStart.getTime() - now.getTime()) / 1000 / 60)} minutes`);
+            console.log(`   Shift starts at: ${shiftStartLocal.format()} (${timezone})`);
+            console.log(`   Current time: ${now.tz(timezone).format()} (${timezone})`);
+            console.log(`   Minutes until shift: ${Math.round(shiftStartLocal.diff(now, 'minutes'))}`);
 
             // Check if shift is within the next hour
-            if (!(shiftStart > now && shiftStart <= oneHourLater)) {
+            const oneHourLater = now.clone().add(1, 'hour');
+            if (!(shiftStartLocal.isAfter(now) && shiftStartLocal.isBefore(oneHourLater))) {
                 console.log(`   ⏭️ Skipping - not within 1-hour window`);
                 continue;
             }
@@ -53,8 +58,8 @@ const sendShiftReminders = async () => {
 
             if (!staff || !staff.email) {
                 const staffId = staff?._id || shift.assignedTo;
-                if (!staffId) {
-                    console.log(`   ❌ No valid assigned staff ID. Skipping.`);
+                if(!staffId){
+                    console.log(`   ❌ No valid assigned Staff ID. Skipping...`);
                     continue;
                 }
 
@@ -76,10 +81,12 @@ const sendShiftReminders = async () => {
                     template: 'shift_reminder',
                     context: {
                         username: staff.name,
-                        date: shift.date.toDateString(),
+                        date: moment(shift.date).format('dddd, MMMM D, YYYY'),
                         startTime: shift.startTime,
                         endTime: shift.endTime,
                         location: shift.location || 'N/A',
+                        timezone: timezone,
+                        localStartTime: shiftStartLocal.format('h:mm A z')
                     },
                 });
 

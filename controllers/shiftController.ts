@@ -5,6 +5,7 @@ import { User } from '../models/User';
 import { Shift } from '../models/Shift';
 import {sendEmail} from "../utils/email";
 import {Types} from "mongoose";
+import moment from 'moment-timezone';
 
 
 
@@ -106,19 +107,33 @@ export const getShifts = async (req: Request, res: Response, next: NextFunction)
 
 
 export const getMyShift = async (req: Request, res: Response, next: NextFunction) => {
-    try{
+    try {
         const user = req.user;
 
         const shifts = await Shift.find({
             assignedTo: user.id,
-            organizationId: user.organizationId
-        }).sort({ date: 1 });
-        res.status(200).json({ shifts });
+            date: { $gte: new Date() }
+        })
+            .populate('organizationId')
+            .sort({ date: 1, startTime: 1 });
+
+        // Add timezone info to each shift
+        const shiftsWithTimezone = shifts.map(shift => {
+            const organization = shift.organizationId as any;
+            const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
+
+            return {
+                ...shift.toObject(),
+                timezone: timezone
+            };
+        });
+
+        res.status(200).json({ shifts: shiftsWithTimezone });
     } catch (error) {
-        console.error('Error fetching own shifts:', error);
+        console.error('Error fetching shifts:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
-}
+};
 
 
 export const getShiftById = async (req: Request, res: Response, next: NextFunction) => {
@@ -598,13 +613,15 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             return;
         }
 
-        const shift = await Shift.findById(req.params.id);
+        const shift = await Shift.findById(req.params.id)
+            .populate('organizationId');
+
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
 
-        if (shift.organizationId.toString() !== user.organizationId.toString()) {
+        if (shift.organizationId._id.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different organization' });
             return;
         }
@@ -619,60 +636,36 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             return;
         }
 
-        const now = new Date();
+        // Get timezone - use shift timezone, organization timezone, or default
+        const organization = shift.organizationId as any;
+        const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
 
-        // Debug logs
-        console.log('Timezone Debug:', {
-            serverTime: now.toISOString(),
-            serverLocalTime: now.toString(),
-            timezoneOffset: now.getTimezoneOffset(),
-            shiftDateFromDB: shift.date,
-            shiftDateType: typeof shift.date,
-            shiftStartTime: shift.startTime
+        // Current time
+        const now = moment();
+        const nowUTC = now.toDate();
+
+        // Parse shift date and time in the shift's timezone
+        const shiftDateStr = moment(shift.date).format('YYYY-MM-DD');
+        const shiftStartStr = `${shiftDateStr} ${shift.startTime}`;
+
+        // Create shift start time in the specified timezone
+        const shiftStartLocal = moment.tz(shiftStartStr, 'YYYY-MM-DD HH:mm', timezone);
+        const shiftStartUTC = shiftStartLocal.toDate();
+
+        console.log('Timezone-aware clock-in:', {
+            timezone: timezone,
+            currentTimeUTC: nowUTC.toISOString(),
+            currentTimeLocal: now.tz(timezone).format('YYYY-MM-DD HH:mm:ss Z'),
+            shiftTimeLocal: shiftStartLocal.format('YYYY-MM-DD HH:mm:ss Z'),
+            shiftTimeUTC: shiftStartUTC.toISOString(),
+            minutesUntilShift: Math.round((shiftStartUTC.getTime() - nowUTC.getTime()) / 60000)
         });
 
-        // Parse the shift date - ensure it's a Date object
-        let shiftDate = shift.date;
-        if (typeof shiftDate === 'string') {
-            shiftDate = new Date(shiftDate);
-        }
+        // Calculate one hour before shift in UTC
+        const oneHourBeforeShift = new Date(shiftStartUTC.getTime() - 60 * 60 * 1000);
 
-        // Parse hours and minutes
-        const [hour, minute] = shift.startTime.split(':').map(Number);
-
-        // Create shift start datetime in UTC
-        const shiftStart = new Date(shiftDate);
-        shiftStart.setUTCHours(hour, minute, 0, 0);
-
-        // Log all date calculations
-        console.log('Date Calculations:', {
-            originalShiftDate: shift.date,
-            parsedShiftDate: shiftDate.toISOString(),
-            shiftStartTime: `${hour}:${minute}`,
-            calculatedShiftStart: shiftStart.toISOString(),
-            calculatedShiftStartLocal: shiftStart.toString(),
-            nowISO: now.toISOString(),
-            nowLocal: now.toString()
-        });
-
-        // Calculate one hour before shift
-        const oneHourBeforeShift = new Date(shiftStart.getTime() - 60 * 60 * 1000);
-
-        // Calculate time differences
-        const msUntilShift = shiftStart.getTime() - now.getTime();
-        const msUntilCanClockIn = oneHourBeforeShift.getTime() - now.getTime();
-
-        console.log('Time Differences:', {
-            msUntilShift: msUntilShift,
-            minutesUntilShift: Math.round(msUntilShift / 60000),
-            msUntilCanClockIn: msUntilCanClockIn,
-            minutesUntilCanClockIn: Math.round(msUntilCanClockIn / 60000),
-            oneHourBeforeShift: oneHourBeforeShift.toISOString(),
-            canClockIn: now >= oneHourBeforeShift
-        });
-
-        if (now < oneHourBeforeShift) {
-            const minutesUntilAllowed = Math.ceil(msUntilCanClockIn / (60 * 1000));
+        if (nowUTC < oneHourBeforeShift) {
+            const minutesUntilAllowed = Math.ceil((oneHourBeforeShift.getTime() - nowUTC.getTime()) / (60 * 1000));
 
             let timeMessage = '';
             if (minutesUntilAllowed > 60) {
@@ -686,46 +679,40 @@ export const clockInShift = async (req: Request, res: Response, next: NextFuncti
             res.status(403).json({
                 message: `You can clock in ${timeMessage} from now (within 1 hour before shift start)`,
                 details: {
-                    currentTime: now.toISOString(),
-                    currentTimeLocal: now.toString(),
-                    shiftDate: shift.date,
-                    shiftStartTime: shift.startTime,
-                    calculatedShiftStart: shiftStart.toISOString(),
-                    calculatedShiftStartLocal: shiftStart.toString(),
-                    earliestClockIn: oneHourBeforeShift.toISOString(),
-                    earliestClockInLocal: oneHourBeforeShift.toString(),
-                    minutesUntilShift: Math.round(msUntilShift / 60000),
-                    minutesUntilCanClockIn: Math.round(msUntilCanClockIn / 60000)
+                    currentTimeUTC: nowUTC.toISOString(),
+                    currentTimeLocal: moment(nowUTC).tz(timezone).format('YYYY-MM-DD HH:mm:ss'),
+                    shiftStartTimeLocal: shiftStartLocal.format('YYYY-MM-DD HH:mm:ss'),
+                    shiftTimezone: timezone,
+                    earliestClockInLocal: moment(oneHourBeforeShift).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
                 }
             });
             return;
         }
 
         // Check if trying to clock in too late
-        const twoHoursAfterShift = new Date(shiftStart.getTime() + 2 * 60 * 60 * 1000);
-        if (now > twoHoursAfterShift) {
+        const twoHoursAfterShift = new Date(shiftStartUTC.getTime() + 2 * 60 * 60 * 1000);
+        if (nowUTC > twoHoursAfterShift) {
             res.status(403).json({
                 message: 'Cannot clock in more than 2 hours after shift start time',
                 details: {
-                    currentTime: now.toISOString(),
-                    shiftStart: shiftStart.toISOString(),
+                    currentTime: nowUTC.toISOString(),
+                    shiftStart: shiftStartUTC.toISOString(),
                     latestClockIn: twoHoursAfterShift.toISOString()
                 }
             });
             return;
         }
 
-        shift.clockInTime = now;
+        shift.clockInTime = nowUTC;
         shift.status = 'in-progress';
         await shift.save();
 
         res.status(200).json({
             message: 'Clocked in successfully',
-            shift,
-            clockInDetails: {
-                clockedInAt: now.toISOString(),
-                shiftStartTime: shiftStart.toISOString(),
-                minutesBeforeShift: Math.round((shiftStart.getTime() - now.getTime()) / 60000)
+            shift: {
+                ...shift.toObject(),
+                timezone: timezone,
+                clockInTimeLocal: moment(nowUTC).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
             }
         });
         return;
@@ -745,13 +732,15 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
             return;
         }
 
-        const shift = await Shift.findById(req.params.id);
+        const shift = await Shift.findById(req.params.id)
+            .populate('organizationId');
+
         if (!shift) {
             res.status(404).json({ message: 'Shift not found' });
             return;
         }
 
-        if (shift.organizationId.toString() !== user.organizationId.toString()) {
+        if (shift.organizationId._id.toString() !== user.organizationId.toString()) {
             res.status(403).json({ message: 'Forbidden: Different organization' });
             return;
         }
@@ -775,7 +764,6 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
         const clockInTime = new Date(shift.clockInTime);
         const fifteenMinutesAfterClockIn = new Date(clockInTime.getTime() + 15 * 60 * 1000);
 
-        // Check if at least 15 minutes have passed since clock in
         if (now < fifteenMinutesAfterClockIn) {
             const minutesRemaining = Math.ceil((fifteenMinutesAfterClockIn.getTime() - now.getTime()) / (60 * 1000));
             res.status(403).json({
@@ -791,14 +779,23 @@ export const clockOutShift = async (req: Request, res: Response, next: NextFunct
 
         shift.clockOutTime = now;
         shift.status = 'completed';
+
+        // Calculate worked hours
+        const hoursWorked = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+        shift.workedHours = parseFloat(hoursWorked.toFixed(2));
+
         await shift.save();
 
-        // Calculate hours worked
-        const hoursWorked = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+        const organization = shift.organizationId as any;
+        const timezone = shift.timezone || organization?.timezone || 'Africa/Nairobi';
 
         res.status(200).json({
             message: 'Clocked out successfully',
-            shift,
+            shift: {
+                ...shift.toObject(),
+                timezone: timezone,
+                clockOutTimeLocal: moment(now).tz(timezone).format('YYYY-MM-DD HH:mm:ss')
+            },
             clockOutDetails: {
                 clockedOutAt: now.toISOString(),
                 hoursWorked: hoursWorked.toFixed(2),
