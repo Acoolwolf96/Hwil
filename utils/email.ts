@@ -25,7 +25,10 @@ transporter.verify((error, success) => {
 interface EmailPayload {
     to: string;
     subject: string;
-    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff' | 'shift_reminder' | 'staff_registration_success' | 'shift_schedule_created' | 'shift_updated' | 'shift_cancelled' | 'shift_rejected';
+    template: 'welcome_email' | 'reset_password' | 'permission_updated' | 'invite_staff' |
+        'shift_reminder' | 'staff_registration_success' | 'shift_schedule_created' |
+        'shift_updated' | 'shift_cancelled' | 'shift_rejected' | 'verify_email' |
+        'verify_email_staff';
     context: Record<string, any>;
 }
 
@@ -35,14 +38,65 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
     switch (template) {
         case 'welcome_email':
             html = `
-                <p>Dear ${context.username},</p>
-                <p>Welcome to Hwil! Your account has been successfully created. We're excited to have you on board.</p>
-                <p>If you have any questions or need assistance, feel free to reach out to your manager or support team.</p>
-                <p>Best regards,<br/>The Hwil Team</p>
-                <hr>
-                <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Welcome to Hwil!</h2>
+                    <p>Dear ${context.username},</p>
+                    <p>Welcome to Hwil! Your account has been successfully created. We're excited to have you on board.</p>
+                    <p>You have registered as a manager and created the organization <strong>${context.organizationName}</strong>.</p>
+                    <p><strong>Important:</strong> Please check your inbox for a separate email to verify your email address. You'll need to verify your email before you can log in.</p>
+                    <p>If you have any questions or need assistance, feel free to reach out to our support team.</p>
+                    <p>Best regards,<br/>The Hwil Team</p>
+                    <hr>
+                    <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
+                </div>
             `;
             break;
+
+        case 'verify_email':
+            html = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Verify Your Email Address</h2>
+                    <p>Dear ${context.username},</p>
+                    <p>Thank you for registering with Hwil! To complete your registration and access your account, please verify your email address by clicking the button below:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${context.verificationLink}" style="background-color: #007bff; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Verify Email Address</a>
+                    </div>
+                    <p>Or copy and paste this link into your browser:</p>
+                    <p style="word-break: break-word; background-color: #f4f4f4; padding: 10px; border-radius: 4px;">
+                        ${context.verificationLink}
+                    </p>
+                    <p><strong>This link will expire in 1 hour for security reasons.</strong></p>
+                    <p>If you didn't create an account with Hwil, please ignore this email.</p>
+                    <p>Best regards,<br/>The Hwil Team</p>
+                    <hr>
+                    <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
+                </div>
+            `;
+            break;
+
+        case 'verify_email_staff':
+            html = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Verify Your Email Address</h2>
+                    <p>Dear ${context.username},</p>
+                    <p>Welcome to <strong>${context.Organization}</strong> on Hwil! To complete your registration and access your staff account, please verify your email address by clicking the button below:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${context.verificationLink}" style="background-color: #28a745; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">Verify Email Address</a>
+                    </div>
+                    <p>Or copy and paste this link into your browser:</p>
+                    <p style="word-break: break-word; background-color: #f4f4f4; padding: 10px; border-radius: 4px;">
+                        ${context.verificationLink}
+                    </p>
+                    <p><strong>This link will expire in 1 hour for security reasons.</strong></p>
+                    <p>Once verified, you'll be able to log in and view your assigned shifts.</p>
+                    <p>If you didn't expect this invitation, please ignore this email.</p>
+                    <p>Best regards,<br/>The Hwil Team</p>
+                    <hr>
+                    <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
+                </div>
+            `;
+            break;
+
         case 'reset_password':
             html = `
                 <p>Dear ${context.username},</p>
@@ -58,6 +112,7 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
                 <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
             `;
             break;
+
         case 'permission_updated':
             html = `
                 <p>Dear ${context.username},</p>
@@ -97,7 +152,8 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
             html = `
                 <p>Dear ${context.username},</p>
                 <p>Congratulations! You have successfully registered as a staff member on <strong>${context.Organization}</strong>.</p>
-                <p>You can now log in, view your assigned shifts, and manage your schedule easily.</p>
+                <p><strong>Important:</strong> Please check your inbox for a separate email to verify your email address. You'll need to verify your email before you can log in.</p>
+                <p>Once verified, you can log in, view your assigned shifts, and manage your schedule easily.</p>
                 <p>If you have any questions or encounter issues, please contact your manager or the support team.</p>
                 <p>We're glad to have you on the team!</p>
                 <p>Best regards,<br/>The Hwil Team</p>
@@ -160,6 +216,7 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
                 <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>
             `;
             break;
+
         case 'shift_cancelled':
             html = `
                 <p>Dear ${context.username},</p>

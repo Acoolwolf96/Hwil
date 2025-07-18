@@ -9,6 +9,8 @@ import { Staff } from '../models/Staff';
 import { InviteToken } from '../models/InviteToken';
 import { Invite } from '../models/Invites';
 import { PasswordResetToken } from '../models/PasswordResetToken';
+import { generateVerificationToken, createVerificationUrl } from "../utils/emailVerification";
+import {EmailVerificationToken} from "../models/EmailVerificationToken";
 
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
@@ -39,6 +41,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
             email: normalizedEmail,
             password: hashedPassword,
             role: 'manager',
+            emailVerified: false
         });
 
         const savedUser = await user.save();
@@ -53,39 +56,48 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         savedUser.organizationId = savedOrg._id as import('mongoose').Types.ObjectId;
         await savedUser.save();
 
-        const payload = {
-            id: (savedUser._id as import('mongoose').Types.ObjectId).toString(),
-            email: savedUser.email,
-            role: savedUser.role,
-            organizationId: (savedOrg._id as import('mongoose').Types.ObjectId).toString(),
-        };
-
-        const accessToken = generateAccessToken(payload);
-        const refreshToken = generateRefreshToken(payload);
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
-
-        res.status(201).json({
-            message: 'Manager and organization created',
-            accessToken,
-            organizationId: savedOrg._id,
-        });
-
+        // Send welcome email first
         try {
             await sendEmail({
                 to: normalizedEmail,
-                subject: 'Welcome to our System',
+                subject: 'Welcome to Hwil',
                 template: 'welcome_email',
-                context: { username: name },
+                context: {
+                    username: name,
+                    organizationName: organizationName
+                },
             });
         } catch (emailErr) {
-            console.error('Email sending failed:', emailErr);
+            console.error('Welcome email sending failed:', emailErr);
         }
+
+        // Generate verification token and send verification email
+        try {
+            const verificationToken = await generateVerificationToken(
+                savedUser.id.toString(),
+                savedUser.email
+            );
+            const verificationUrl = createVerificationUrl(verificationToken);
+
+            await sendEmail({
+                to: normalizedEmail,
+                subject: 'Verify Your Email - Hwil',
+                template: 'verify_email',
+                context: {
+                    username: name,
+                    verificationLink: verificationUrl
+                },
+            });
+        } catch (emailErr) {
+            console.error('Verification email sending failed:', emailErr);
+        }
+
+        res.status(201).json({
+            message: 'Registration successful. Please check your email to verify your account.',
+            requiresEmailVerification: true,
+            organizationId: savedOrg._id,
+        });
+
     } catch (err) {
         console.error('Registration error:', err);
         res.status(500).json({ error: 'Registration failed' });
@@ -194,6 +206,7 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
             role: 'staff',
             organizationId: invite.organizationId,
             managerId: invite.createdBy,
+            emailVerified: false
         });
 
         await staff.save();
@@ -204,45 +217,14 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
             { $set: { stage: 'accepted' } }
         );
 
-        const payload = {
-            id: (staff.id as import('mongoose').Types.ObjectId).toString(),
-            email: staff.email,
-            role: 'staff',
-            organizationId: (staff.organizationId as import('mongoose').Types.ObjectId).toString(),
-            managerId: (staff.managerId as import('mongoose').Types.ObjectId).toString(),
-        };
-
-        const accessToken = generateAccessToken(payload);
-        const refreshToken = generateRefreshToken(payload);
-
-        // Set tokens as HTTP-only cookies
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES) * 1000,
-        });
-
         const org = await Organization.findById(invite.organizationId);
         const organizationName = org?.name || 'Hwil';
 
-        res.status(201).json({
-            message: 'Staff registered successfully',
-            user: {
-                id: staff.id,
-                name: staff.name,
-                email: staff.email,
-                role: staff.role
-            },
-            organizationId: invite.organizationId,
-            organizationName,
-        });
-
-
+        // Send welcome email first
         try {
             await sendEmail({
                 to: staff.email,
-                subject: 'Welcome to our System',
+                subject: 'Welcome to Hwil',
                 template: 'staff_registration_success',
                 context: {
                     username: staff.name,
@@ -250,14 +232,194 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
                 },
             });
         } catch (emailErr) {
-            console.error('Email sending failed:', emailErr);
+            console.error('Welcome email sending failed:', emailErr);
         }
+
+        // Generate verification token and send verification email
+        try {
+            const verificationToken = await generateVerificationToken(
+                staff.id.toString(),
+                staff.email
+            );
+            const verificationUrl = createVerificationUrl(verificationToken);
+
+            await sendEmail({
+                to: staff.email,
+                subject: 'Verify Your Email - Hwil',
+                template: 'verify_email_staff',
+                context: {
+                    username: staff.name,
+                    Organization: organizationName,
+                    verificationLink: verificationUrl
+                },
+            });
+        } catch (emailErr) {
+            console.error('Verification email sending failed:', emailErr);
+        }
+
+        res.status(201).json({
+            message: 'Staff registered successfully. Please check your email to verify your account.',
+            requiresEmailVerification: true,
+            organizationId: invite.organizationId,
+            organizationName,
+        });
 
     } catch (error) {
         console.error('Error registering staff with token:', error);
         res.status(500).json({ message: 'Error registering staff' });
     }
-}
+};
+
+
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { token } = req.query;
+
+        if (!token || typeof token !== 'string') {
+            res.status(400).json({ message: 'Invalid or missing token' });
+            return;
+        }
+
+        // Hash the token to compare with stored token
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        // Find valid token
+        const verificationToken = await EmailVerificationToken.findOne({
+            token: hashedToken,
+            expiresAt: { $gt: new Date() }
+        });
+
+        if (!verificationToken) {
+            res.status(400).json({ message: 'Invalid or expired verification token' });
+            return;
+        }
+
+        // Find user in both User and Staff collections
+        let account = await User.findById(verificationToken.userId);
+        let isStaff = false;
+
+        if (!account) {
+            account = await Staff.findById(verificationToken.userId);
+            isStaff = true;
+        }
+
+        if (!account) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        // Update email verification status
+        account.emailVerified = true;
+        account.emailVerifiedAt = new Date();
+        await account.save();
+
+        // Delete the used token
+        await EmailVerificationToken.deleteOne({ _id: verificationToken._id });
+
+        // Generate tokens for automatic login after verification
+        const payload = {
+            id: account.id.toString(),
+            email: account.email,
+            role: account.role,
+            organizationId: account.organizationId.toString(),
+            ...(isStaff && { managerId: (account as any).managerId?.toString() }),
+        };
+
+        const accessToken = generateAccessToken(payload);
+        const refreshToken = generateRefreshToken(payload);
+
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            maxAge: parseTimeToSeconds(process.env.JWT_REFRESH_EXPIRES || '7d') * 1000,
+            path: '/'
+        });
+
+        res.status(200).json({
+            message: 'Email verified successfully',
+            user: {
+                id: account.id.toString(),
+                name: account.name,
+                email: account.email,
+                role: account.role
+            },
+            accessToken,
+            organizationId: account.organizationId
+        });
+
+    } catch (error) {
+        console.error('Error verifying email:', error);
+        res.status(500).json({ message: 'Error verifying email' });
+    }
+};
+
+// Add resend verification email endpoint
+export const resendVerificationEmail = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email } = req.body;
+
+        if (!email || typeof email !== 'string') {
+            res.status(400).json({ message: 'Email is required' });
+            return;
+        }
+
+        const normalizedEmail = email.toLowerCase();
+
+        // Find user in both collections
+        let account = await User.findOne({ email: normalizedEmail });
+        if (!account) {
+            account = await Staff.findOne({ email: normalizedEmail });
+        }
+
+        if (!account) {
+            // Don't reveal if email exists or not
+            res.status(200).json({ message: 'If the email exists, a verification link has been sent' });
+            return;
+        }
+
+        if (account.emailVerified) {
+            res.status(400).json({ message: 'Email already verified' });
+            return;
+        }
+
+        // Delete any existing tokens for this user
+        await EmailVerificationToken.deleteMany({ userId: account._id });
+
+        // Generate new verification token
+        const verificationToken = await generateVerificationToken(
+            account.id.toString(),
+            account.email
+        );
+        const verificationUrl = createVerificationUrl(verificationToken);
+
+        // Determine organization name
+        let organizationName = 'Hwil';
+        if (account.organizationId) {
+            const org = await Organization.findById(account.organizationId);
+            organizationName = org?.name || 'Hwil';
+        }
+
+        // Send verification email
+        await sendEmail({
+            to: account.email,
+            subject: 'Verify Your Email - Hwil',
+            template: account.role === 'staff' ? 'verify_email_staff' : 'verify_email',
+            context: {
+                username: account.name,
+                verificationLink: verificationUrl,
+                ...(account.role === 'staff' && { Organization: organizationName })
+            },
+        });
+
+        res.status(200).json({ message: 'Verification email sent successfully' });
+
+    } catch (error) {
+        console.error('Error resending verification email:', error);
+        res.status(500).json({ message: 'Error sending verification email' });
+    }
+};
+
 
 
 export const getAllStaffInOrg = async (req: Request, res: Response) => {

@@ -8,6 +8,8 @@ export interface IUser extends Document {
   password: string;
   role: "manager" | "staff";
   organizationId: mongoose.Types.ObjectId;
+  emailVerified: boolean;
+  emailVerifiedAt: Date;
   createdAt: Date;
   
 }
@@ -35,7 +37,15 @@ const userSchema = new Schema<IUser>({
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Organization",
-  }
+  },
+  emailVerified:{
+    type: Boolean,
+    default: false
+  },
+  emailVerifiedAt:{
+    type: Date,
+    required: false
+  },
 });
 
 

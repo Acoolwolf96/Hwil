@@ -1,7 +1,7 @@
 import express from 'express';
 import {sendInvite, getInvites, verifyStaffToken, getInvitesForOrganization} from '../controllers/inviteController';
 import { authMiddleware } from '../middleware/auth';
-import { registerStaffWithToken } from '../controllers/authControllers';
+import {registerStaffWithToken, resendVerificationEmail, verifyEmail} from '../controllers/authControllers';
 
 
 const router = express.Router();
@@ -21,6 +21,9 @@ router.post('/', authMiddleware, sendInvite);
 router.post('/register/staff', registerStaffWithToken);
 
 router.get('/verify', verifyStaffToken);
+
+router.get('/verify-email', verifyEmail);
+router.post('/resend-verification', resendVerificationEmail);
 
 
 export default router;

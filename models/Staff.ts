@@ -8,6 +8,8 @@ export interface IStaff extends Document {
     role: 'staff';
   organizationId: mongoose.Types.ObjectId;
   managerId: mongoose.Types.ObjectId;
+  emailVerified: boolean;
+  emailVerifiedAt: Date;
 }
 
 const staffSchema = new Schema<IStaff>({
@@ -39,6 +41,14 @@ const staffSchema = new Schema<IStaff>({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
+  },
+  emailVerified:{
+    type: Boolean,
+    default: false
+  },
+  emailVerifiedAt:{
+    type: Date,
+    required: false
   },
 }, {
   timestamps: true });
