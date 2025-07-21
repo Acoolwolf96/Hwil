@@ -1,5 +1,20 @@
 import express from 'express';
-import { createShift, getShifts, getMyShift, getShiftById, updateShift, rejectShift, deleteShift, getOpenShifts, claimOpenShift, createOpenShift, clockInShift, clockOutShift, markShiftAsCompleted } from '../controllers/shiftController';
+import {
+    createShift,
+    getShifts,
+    getMyShift,
+    getShiftById,
+    updateShift,
+    rejectShift,
+    deleteShift,
+    getOpenShifts,
+    claimOpenShift,
+    createOpenShift,
+    clockInShift,
+    clockOutShift,
+    markShiftAsCompleted,
+    createBulkShifts
+} from '../controllers/shiftController';
 import { authMiddleware } from '../middleware/auth';
 import { upload } from '../middleware/uploads';
 
@@ -11,6 +26,8 @@ const router = express.Router();
 
 
 router.post('/add', authMiddleware, createShift);
+
+router.post('/bulk', authMiddleware, createBulkShifts);
 router.post('/upload', authMiddleware, upload.single('file'), uploadShiftFromSpreadsheet);
 router.post('/open', authMiddleware, createOpenShift);
 

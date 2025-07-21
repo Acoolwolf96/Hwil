@@ -163,18 +163,42 @@ export async function sendEmail({ to, subject, template, context }: EmailPayload
             break;
 
         case 'shift_schedule_created':
+            const shiftsCount = context.shifts.length;
+            const dateRange = shiftsCount > 1 ?
+                `${context.shifts[0].date} to ${context.shifts[shiftsCount - 1].date}` :
+                context.shifts[0].date;
+
             html = `
                 <p>Dear ${context.username},</p>
-                <p>Your shift schedule has been updated. Please find your upcoming shift(s) below:</p>
-                <ul style="padding-left: 20px;">
-                  ${context.shifts
-                .map(
-                    (s: any) =>
-                        `<li><strong>${s.date}</strong> — ${s.startTime} to ${s.endTime} at ${s.location || 'N/A'}</li>`
-                )
-                .join('')}
-                </ul>
-                <p>Please log in to your Hwil account to view more details.</p>
+                <p>${shiftsCount > 1 ?
+                        `You have been assigned ${shiftsCount} new shifts for the period ${dateRange}.` :
+                        `You have been assigned a new shift on ${context.shifts[0].date}.`
+                    }</p>
+                <p>Please find your shift details below:</p>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                    <thead>
+                        <tr style="background-color: #f3f4f6; border-bottom: 2px solid #e5e7eb;">
+                            <th style="padding: 12px; text-align: left;">Date</th>
+                            <th style="padding: 12px; text-align: left;">Time</th>
+                            <th style="padding: 12px; text-align: left;">Location</th>
+                            ${context.shifts.some((s: any) => s.notes) ? '<th style="padding: 12px; text-align: left;">Notes</th>' : ''}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${context.shifts
+                        .map((s: any, index: number) => `
+                                <tr style="border-bottom: 1px solid #e5e7eb; ${index % 2 === 0 ? 'background-color: #f9fafb;' : ''}">
+                                    <td style="padding: 12px;">${s.date}</td>
+                                    <td style="padding: 12px;">${s.startTime} - ${s.endTime}</td>
+                                    <td style="padding: 12px;">${s.location || 'N/A'}</td>
+                                    ${context.shifts.some((shift: any) => shift.notes) ?
+                            `<td style="padding: 12px;">${s.notes || '-'}</td>` : ''}
+                                </tr>
+                            `)
+                        .join('')}
+                    </tbody>
+                </table>
+                <p>Please log in to your Hwil account to view more details or make any necessary arrangements.</p>
                 <p>Best regards,<br/>The Hwil Team</p>
                 <hr>
                 <p style="font-size: 12px; color: gray;">Please do not reply to this email. This inbox is not monitored.</p>

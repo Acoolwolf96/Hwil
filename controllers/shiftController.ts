@@ -84,6 +84,105 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
     }
 };
 
+export const createBulkShifts = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const user = req.user;
+
+        if (user.role !== 'manager') {
+            res.status(403).json({ message: 'Forbidden, Only managers can create shifts' });
+            return;
+        }
+
+        const { shifts } = req.body;
+
+        if (!shifts || !Array.isArray(shifts) || shifts.length === 0) {
+            res.status(400).json({ message: 'No shifts provided' });
+            return;
+        }
+
+        // Group shifts by staff member
+        const shiftsByStaff = new Map<string, any[]>();
+        const createdShifts = [];
+
+        // Validate and create all shifts
+        for (const shiftData of shifts) {
+            const { name, assignedTo, date, startTime, endTime, location, notes } = shiftData;
+
+            if (!name || !assignedTo || !date || !startTime || !endTime) {
+                res.status(400).json({ message: 'Missing required fields in one or more shifts' });
+                return;
+            }
+
+            const shift = await Shift.create({
+                name,
+                organizationId: user.organizationId,
+                assignedTo,
+                date: new Date(date),
+                startTime,
+                endTime,
+                location: location || 'Main Location',
+                notes,
+                status: 'assigned',
+                isOpen: false,
+                createdBy: user.id,
+            });
+
+            createdShifts.push(shift);
+
+            // Group shifts by staff member for email notification
+            if (!shiftsByStaff.has(assignedTo)) {
+                shiftsByStaff.set(assignedTo, []);
+            }
+            shiftsByStaff.get(assignedTo)!.push({
+                date: shift.date.toDateString(),
+                startTime: shift.startTime,
+                endTime: shift.endTime,
+                location: shift.location,
+                notes: shift.notes
+            });
+        }
+
+        // Send email notifications to each staff member
+        const emailPromises = [];
+        for (const [staffId, staffShifts] of shiftsByStaff) {
+            const staff = await Staff.findById(staffId);
+            if (staff && staff.email) {
+                emailPromises.push(
+                    sendEmail({
+                        to: staff.email,
+                        subject: `${staffShifts.length} New Shifts Assigned to You`,
+                        template: 'shift_schedule_created',
+                        context: {
+                            username: staff.name,
+                            shifts: staffShifts.sort((a, b) =>
+                                new Date(a.date).getTime() - new Date(b.date).getTime()
+                            ),
+                            totalShifts: staffShifts.length
+                        },
+                    }).catch(err => {
+                        console.error(`Failed to send email to ${staff.email}:`, err);
+                    })
+                );
+            }
+        }
+
+        // Wait for all emails to be sent
+        await Promise.all(emailPromises);
+
+        res.status(201).json({
+            message: `${createdShifts.length} shifts created successfully`,
+            shifts: createdShifts,
+            notificationsSent: emailPromises.length
+        });
+    } catch (error) {
+        console.error('Error creating bulk shifts:', error);
+        res.status(500).json({
+            message: 'Internal server error',
+            error
+        });
+    }
+};
+
 export const getShifts = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const user = req.user;
