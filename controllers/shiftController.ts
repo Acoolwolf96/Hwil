@@ -1079,6 +1079,48 @@ export const approveShift = async (req: Request, res: Response) => {
     }
 }
 
+export const updateShiftWorkedHours = async (req: Request, res: Response) => {
+    try{
+        const { id } = req.params;
+        const user = req.user;
+        const { workedHours} = req.body;
+
+        if (typeof workedHours !== 'number'){
+            res.status(400).json({ message: 'WorkedHours must be a number' });
+            return
+        }
+
+        const shift = await Shift.findById(id)
+
+        if(!shift){
+            res.status(404).json({ message: 'Shift not found' });
+            return
+        }
+
+        // Fixed authorization logic
+        const isSameOrg = shift.organizationId.toString() === user.organizationId.toString();
+        const isManager = user.role === 'manager';
+
+        if(!isSameOrg || !isManager){
+            res.status(403).json({ message: 'Forbidden: Only managers can update worked hours'})
+            return
+        }
+
+        shift.workedHours = workedHours;
+        await shift.save();
+
+        const updatedShift = await Shift.findById(id)
+            .populate('assignedTo', 'name email')
+            .populate('createdBy', 'name email');
+
+        res.status(200).json({ message: 'Worked hours updated', shift: updatedShift})
+    } catch (e) {
+        console.error('Error updating worked hours:', e)
+        res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+
 export const rejectShift = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;

@@ -13,7 +13,8 @@ import {
     clockInShift,
     clockOutShift,
     markShiftAsCompleted,
-    createBulkShifts
+    createBulkShifts,
+    updateShiftWorkedHours
 } from '../controllers/shiftController';
 import { authMiddleware } from '../middleware/auth';
 import { upload } from '../middleware/uploads';
@@ -39,6 +40,7 @@ router.post('/claim/:id', authMiddleware, claimOpenShift);
 router.post('/clock-in/:id', authMiddleware, clockInShift);
 router.post('/:id/clock-out', authMiddleware, clockOutShift);
 
+router.patch('/:id/updatehours', authMiddleware, updateShiftWorkedHours)
 router.patch('/:id/complete', authMiddleware, markShiftAsCompleted);
 router.patch('/:id/approve', authMiddleware, approveShift);
 router.patch('/:id/reject', authMiddleware, rejectShift);

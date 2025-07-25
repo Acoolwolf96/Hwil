@@ -11,7 +11,7 @@ import './types/express_aug';
 
 // Import routes
 import usersRouter from './routes/users';
-import { register, login, getAllStaffInOrg, forgotPassword, resetPassword, validateResetToken, logout} from './controllers/authControllers';
+import { register, login, getAllStaffInOrg, forgotPassword, resetPassword, validateResetToken, changePassword, logout} from './controllers/authControllers';
 import { loginSchema, registerSchema } from "./validation/authSchema";
 import { validateRequest } from "./middleware/validateRequest";
 import notificationsRouter from './routes/notifications';
@@ -46,6 +46,7 @@ apiRouter.post('/logout', logout)
 
 apiRouter.post('/forgot-password', forgotPassword);
 apiRouter.post('/reset-password', resetPassword);
+apiRouter.post('/change-password', authMiddleware, changePassword)
 apiRouter.get('/validate-reset-token', validateResetToken);
 apiRouter.get('/staff', authMiddleware, getAllStaffInOrg); 
 

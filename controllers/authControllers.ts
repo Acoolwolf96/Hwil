@@ -579,6 +579,83 @@ export const validateResetToken = async (req: Request, res: Response): Promise<v
 
 
 
+export const changePassword = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user?.id; // Assuming you have auth middleware that sets req.user
+
+        if (!userId) {
+            res.status(401).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        if (!currentPassword || !newPassword) {
+            res.status(400).json({ message: 'Current password and new password are required' });
+            return;
+        }
+
+        // Find user in both User and Staff collections
+        let account = await User.findById(userId);
+        let isStaff = false;
+
+        if (!account) {
+            account = await Staff.findById(userId);
+            isStaff = true;
+        }
+
+        if (!account) {
+            res.status(404).json({ message: 'User not found' });
+            return;
+        }
+
+        // Verify current password
+        const isPasswordValid = await bcrypt.compare(currentPassword, account.password);
+        if (!isPasswordValid) {
+            res.status(401).json({ message: 'Current password is incorrect' });
+            return;
+        }
+
+        // Check if new password is same as current password
+        const isSamePassword = await bcrypt.compare(newPassword, account.password);
+        if (isSamePassword) {
+            res.status(400).json({ message: 'New password must be different from current password' });
+            return;
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+        // Update password
+        account.password = hashedPassword;
+        await account.save();
+
+        // Clear both cookies to log the user out
+        res.clearCookie('accessToken', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            path: '/'
+        });
+
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+            path: '/'
+        });
+
+        res.status(200).json({
+            message: 'Password changed successfully. Please login again with your new password.',
+            requiresLogin: true
+        });
+
+    } catch (error) {
+        console.error('Error changing password:', error);
+        res.status(500).json({ message: 'Error changing password' });
+    }
+};
+
+
 
 
 
