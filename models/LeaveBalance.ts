@@ -26,7 +26,7 @@ const LeaveBalanceSchema: Schema<ILeaveBalance> = new Schema(
         },
         totalAnnualLeave: {
             type: Number,
-            default: 21,
+            default: 0,
         },
         usedAnnualLeave: {
             type: Number,

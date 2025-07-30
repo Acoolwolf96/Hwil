@@ -3,7 +3,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface INotification extends Document {
     recipient: mongoose.Types.ObjectId;
     recipientModel: 'Staff' | 'Manager';
-    type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'leave_modified' | 'leave_assigned' | 'shift_assigned' | 'shift_updated' | 'general' | 'shift_schedule_created';
+    type: 'leave_request' | 'leave_approved' | 'leave_rejected' | 'leave_modified' | 'leave_assigned' | 'shift_assigned' | 'shift_updated' | 'general' | 'shift_schedule_created' |
+        'account_created' | 'account_activated' | 'account_deleted';
     title: string;
     message: string;
     relatedTo?: {
@@ -31,7 +32,12 @@ const notificationSchema = new Schema<INotification>({
     type: {
         type: String,
         required: true,
-        enum: ['leave_request', 'leave_approved', 'leave_rejected', 'leave_modified', 'leave_assigned', 'shift_assigned', 'shift_updated', 'general', 'shift_schedule_created']
+        enum: [
+            'leave_request', 'leave_approved', 'leave_rejected', 'leave_modified',
+            'leave_assigned', 'shift_assigned', 'shift_updated', 'general',
+            'shift_schedule_created', 'account_created', 'account_activated',
+            'account_deleted'
+        ]
     },
     title: {
         type: String,

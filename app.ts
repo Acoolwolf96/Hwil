@@ -77,7 +77,7 @@ apiRouter.post('/change-password', authMiddleware, changePassword);
 apiRouter.use('/users', authMiddleware, usersRouter);
 apiRouter.use('/notifications', authMiddleware, notificationsRouter);
 apiRouter.use('/approvals', authMiddleware, approvalRouter)
-apiRouter.use('/invites', authMiddleware, inviteRouter);
+apiRouter.use('/invites', inviteRouter);
 apiRouter.use('/shifts', authMiddleware, shiftRouter);
 apiRouter.use('/leave', authMiddleware, leaveRouter);
 apiRouter.get('/staff', authMiddleware, getAllStaffInOrg);

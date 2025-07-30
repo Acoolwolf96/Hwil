@@ -12,7 +12,16 @@ import { PasswordResetToken } from '../models/PasswordResetToken';
 import { generateVerificationToken, createVerificationUrl } from "../utils/emailVerification";
 import {EmailVerificationToken} from "../models/EmailVerificationToken";
 import { Shift } from "../models/Shift";
-import {notifyManagerWelcome} from "../services/notificationService";
+import {
+    notifyAccountActivated,
+    notifyManagerWelcome,
+    notifyStaffRegistrationSuccess,
+    notifyPasswordChanged,
+    notifyAccountDeleted
+} from "../services/notificationService";
+import {Leave} from "../models/Leave";
+import {LeaveBalance} from "../models/LeaveBalance";
+import {Notification} from "../models/Notification";
 
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
@@ -230,15 +239,12 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
 
         // Send welcome email first
         try {
-            await sendEmail({
-                to: staff.email,
-                subject: 'Welcome to Hwil',
-                template: 'staff_registration_success',
-                context: {
-                    username: staff.name,
-                    Organization: organizationName,
-                },
-            });
+            await notifyStaffRegistrationSuccess(
+                staff.id.toString(),
+                staff.email,
+                staff.name,
+                organizationName
+            );
         } catch (emailErr) {
             console.error('Welcome email sending failed:', emailErr);
         }
@@ -261,6 +267,9 @@ export const registerStaffWithToken = async (req: Request, res: Response): Promi
                     verificationLink: verificationUrl
                 },
             });
+
+
+
         } catch (emailErr) {
             console.error('Verification email sending failed:', emailErr);
         }
@@ -323,6 +332,18 @@ export const verifyEmail = async (req: Request, res: Response): Promise<void> =>
 
         // Delete the used token
         await EmailVerificationToken.deleteOne({ _id: verificationToken._id });
+
+        // Send account activation notification
+        try {
+            await notifyAccountActivated(
+                account.id.toString(),
+                account.email,
+                account.name,
+                isStaff ? 'Staff' : 'Manager'
+            );
+        } catch (emailErr) {
+            console.error('Account activation notification failed:', emailErr);
+        }
 
         // Generate tokens for automatic login after verification
         const payload = {
@@ -637,6 +658,20 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         account.password = hashedPassword;
         await account.save();
 
+
+        // Send password change notification
+        try {
+            await notifyPasswordChanged(
+                account.id.toString(),
+                account.email,
+                account.name || account.email,
+                isStaff ? 'Staff' : 'Manager'
+            );
+        } catch (emailErr) {
+            console.error('Password change notification failed:', emailErr);
+        }
+
+
         // Clear both cookies to log the user out
         res.clearCookie('accessToken', {
             httpOnly: true,
@@ -713,24 +748,32 @@ export const deleteStaff = async(req: Request, res: Response): Promise<void> => 
         // 4. Delete any email verification tokens
         await EmailVerificationToken.deleteMany({ userId: staffId });
 
-        // 5. Send deletion notification email (before actually deleting)
+        // 5. Delete any leave
+        await Leave.deleteMany({ userId: staffId });
+        await LeaveBalance.deleteMany({ userId: staffId });
+
+        // 6. Delete Notifications (both sent to and received by this staff member)
+        await Notification.deleteMany({
+            $or: [
+                { recipient: staffId, recipientModel: 'Staff' }, // Notifications sent to this staff
+                { 'relatedTo.id': staffId } // Notifications related to this staff
+            ]
+        });
+
+        // 7. Send deletion notification email (before actually deleting)
         try {
             const org = await Organization.findById(staffMember.organizationId);
-            await sendEmail({
-                to: staffMember.email,
-                subject: 'Account Deletion Notice - Hwil',
-                template: 'account_deleted',
-                context: {
-                    username: staffMember.name,
-                    organizationName: org?.name || 'Hwil'
-                },
-            });
+            await notifyAccountDeleted(
+                staffMember.email,
+                staffMember.name,
+                org?.name || 'Hwil'
+            );
         } catch (emailErr) {
-            console.error('Failed to send account deletion email:', emailErr);
-            // Don't fail the deletion if email fails
+            console.error('Failed to send account deletion notification:', emailErr);
+            // Don't fail the deletion if notification fails
         }
 
-        // 6. Finally, delete the staff member
+        // 8. Finally, delete the staff member
         await Staff.findByIdAndDelete(staffId);
 
         // Send success response AFTER everything is deleted

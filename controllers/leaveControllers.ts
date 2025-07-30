@@ -417,32 +417,32 @@ export const reviewLeaveRequest = async (req: Request, res: Response): Promise<v
 
         const manager = await User.findById(user.id);
 
-        const emailTemplate = action === 'approved' ? 'leave_request_approved' :
-            action === 'rejected' ? 'leave_request_rejected' : 'leave_request_modified';
-
-        await sendEmail({
-            to: staffMember.email,
-            subject: `Leave Request ${action.charAt(0).toUpperCase() + action.slice(1)}`,
-            template: emailTemplate,
-            context: {
-                username: staffMember.name,
-                managerName: manager?.name || 'Manager',
-                leaveType: leave.type,
-                startDate: leave.startDate.toLocaleDateString(),
-                endDate: leave.endDate.toLocaleDateString(),
-                daysRequested: leave.daysRequested,
-                managerComments: comments,
-                approvedDate: new Date().toLocaleDateString(),
-                ...(action === 'modified' && modifiedDates ? {
-                    originalStartDate: leave.startDate.toLocaleDateString(),
-                    originalEndDate: leave.endDate.toLocaleDateString(),
-                    originalDays: leave.daysRequested,
-                    modifiedStartDate: modifiedDates.startDate ? new Date(modifiedDates.startDate).toLocaleDateString() : '',
-                    modifiedEndDate: modifiedDates.endDate ? new Date(modifiedDates.endDate).toLocaleDateString() : '',
-                    modifiedDays: leave.daysRequested
-                } : {})
-            }
-        });
+        // const emailTemplate = action === 'approved' ? 'leave_request_approved' :
+        //     action === 'rejected' ? 'leave_request_rejected' : 'leave_request_modified';
+        //
+        // await sendEmail({
+        //     to: staffMember.email,
+        //     subject: `Leave Request ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+        //     template: emailTemplate,
+        //     context: {
+        //         username: staffMember.name,
+        //         managerName: manager?.name || 'Manager',
+        //         leaveType: leave.type,
+        //         startDate: leave.startDate.toLocaleDateString(),
+        //         endDate: leave.endDate.toLocaleDateString(),
+        //         daysRequested: leave.daysRequested,
+        //         managerComments: comments,
+        //         approvedDate: new Date().toLocaleDateString(),
+        //         ...(action === 'modified' && modifiedDates ? {
+        //             originalStartDate: leave.startDate.toLocaleDateString(),
+        //             originalEndDate: leave.endDate.toLocaleDateString(),
+        //             originalDays: leave.daysRequested,
+        //             modifiedStartDate: modifiedDates.startDate ? new Date(modifiedDates.startDate).toLocaleDateString() : '',
+        //             modifiedEndDate: modifiedDates.endDate ? new Date(modifiedDates.endDate).toLocaleDateString() : '',
+        //             modifiedDays: leave.daysRequested
+        //         } : {})
+        //     }
+        // });
 
         // Use the new notification service instead of the old system
         await notifyStaffOfLeaveUpdate(

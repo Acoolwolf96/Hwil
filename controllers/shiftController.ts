@@ -6,7 +6,12 @@ import { Shift } from '../models/Shift';
 import {sendEmail} from "../utils/email";
 import {Types} from "mongoose";
 import moment from 'moment-timezone';
-import {notifyStaffOfMultipleShifts, notifyStaffOfShiftAssignment} from "../services/notificationService";
+import {
+    createNotification,
+    notifyStaffOfMultipleShifts,
+    notifyStaffOfShiftAssignment,
+    notifyStaffOfShiftUpdate
+} from "../services/notificationService";
 
 
 export const createShift = async (req: Request, res: Response, next: NextFunction) => {
@@ -360,34 +365,31 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
             shift.location !== location
         );
 
-        type EmailTemplate = "shift_updated" | "welcome_email" | "reset_password" | "permission_updated" | "invite_staff" | "shift_reminder" | "staff_registration_success" | "shift_schedule_created" | 'shift_cancelled';
-
         // Send notification to new assigned staff if changes were made
         if (shouldNotify && updatedShift.assignedTo && updatedShift.assignedTo.email) {
             try {
-                const shiftUpdate = {
-                    date: updatedShift.date.toDateString(),
-                    oldDate: shift.date.toDateString(),
-                    newDate: updatedShift.date.toDateString(),
-                    oldStartTime: shift.startTime,
-                    newStartTime: updatedShift.startTime,
-                    oldEndTime: shift.endTime,
-                    newEndTime: updatedShift.endTime,
-                    oldLocation: shift.location,
-                    newLocation: updatedShift.location
+                const oldShiftDetails = {
+                    date: shift.date,
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                    location: shift.location
                 };
 
-
-                const emailPayload = {
-                    to: updatedShift.assignedTo.email,
-                    subject: 'Your Shift Has Been Updated',
-                    template: "shift_updated" as EmailTemplate,
-                    context: {
-                        username: updatedShift.assignedTo.name || 'there',
-                        shifts: [shiftUpdate]
-                    },
+                const newShiftDetails = {
+                    date: updatedShift.date,
+                    startTime: updatedShift.startTime,
+                    endTime: updatedShift.endTime,
+                    location: updatedShift.location
                 };
-                await sendEmail(emailPayload);
+
+                await notifyStaffOfShiftUpdate(
+                    updatedShift.assignedTo._id.toString(),
+                    updatedShift.assignedTo.email,
+                    updatedShift.assignedTo.name,
+                    updatedShift.id.toString(),
+                    oldShiftDetails,
+                    newShiftDetails
+                );
             } catch (emailErr) {
                 console.error('Failed to send shift update notification:', emailErr);
             }
@@ -396,21 +398,30 @@ export const updateShift = async (req: Request, res: Response, next: NextFunctio
         // Notify previous staff if assignment changed
         if (originalAssignedTo && originalAssignedTo !== newAssignedTo && shift.assignedTo && shift.assignedTo.email) {
             try {
-
-                const emailPayload = {
-                    to: shift.assignedTo.email,
-                    subject: 'You Have Been Removed from a Shift',
-                    template: "shift_cancelled" as EmailTemplate,
-                    context: {
-                        username: shift.assignedTo.name || 'there',
-                        date: shift.date.toDateString(),
-                        startTime: shift.startTime,
-                        endTime: shift.endTime,
-                        location: shift.location || 'Not specified',
-                        reason: 'You have been unassigned from this shift'
+                await createNotification({
+                    recipientId: shift.assignedTo._id.toString(),
+                    recipientModel: 'Staff',
+                    type: 'shift_cancelled',
+                    title: 'Shift Removed',
+                    message: `Your shift on ${shift.date.toDateString()} has been removed`,
+                    relatedTo: {
+                        model: 'Shift',
+                        id: shift.id.toString()
                     },
-                };
-                await sendEmail(emailPayload);
+                    emailData: {
+                        to: shift.assignedTo.email,
+                        subject: 'You Have Been Removed from a Shift',
+                        template: 'shift_cancelled',
+                        context: {
+                            username: shift.assignedTo.name || 'there',
+                            date: shift.date.toDateString(),
+                            startTime: shift.startTime,
+                            endTime: shift.endTime,
+                            location: shift.location || 'Not specified',
+                            reason: 'You have been unassigned from this shift'
+                        }
+                    }
+                });
             } catch (emailErr) {
                 console.error('Failed to send shift removal notification:', emailErr);
             }

@@ -1,9 +1,9 @@
-// services/shiftReminder.ts
 import cron from 'node-cron';
 import moment from 'moment-timezone';
 import { Shift } from '../models/Shift';
 import { Staff } from '../models/Staff';
-import { sendEmail } from '../utils/email';
+import {notifyStaffOfShiftReminder} from "../services/notificationService";
+
 
 const sendShiftReminders = async () => {
     try {
@@ -72,30 +72,31 @@ const sendShiftReminders = async () => {
                 }
             }
 
-            console.log(`   📧 Sending email to ${staff.email} (${staff.name})...`);
+            console.log(`   📧 Preparing notification for ${staff.email} (${staff.name})...`);
 
             try {
-                await sendEmail({
-                    to: staff.email,
-                    subject: `⏰ Upcoming Shift Reminder - ${shift.startTime}`,
-                    template: 'shift_reminder',
-                    context: {
-                        username: staff.name,
-                        date: moment(shift.date).format('dddd, MMMM D, YYYY'),
-                        startTime: shift.startTime,
-                        endTime: shift.endTime,
-                        location: shift.location || 'N/A',
-                        timezone: timezone,
-                        localStartTime: shiftStartLocal.format('h:mm A z')
-                    },
-                });
+                const shiftDetails = {
+                    date: moment(shift.date).format('dddd, MMMM D, YYYY'),
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                    location: shift.location || 'N/A',
+                    timezone: timezone
+                };
+
+                await notifyStaffOfShiftReminder(
+                    staff._id.toString(),
+                    staff.email,
+                    staff.name,
+                    shift.id.toString(),
+                    shiftDetails
+                );
 
                 shift.reminderSent = true;
                 await shift.save();
 
-                console.log(`   ✅ Reminder sent successfully!`);
-            } catch (emailError) {
-                console.error(`   ❌ Failed to send email:`, emailError);
+                console.log(`   ✅ Reminder notification sent successfully!`);
+            } catch (notificationError) {
+                console.error(`   ❌ Failed to send notification:`, notificationError);
             }
         }
 
