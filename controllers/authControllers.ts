@@ -11,6 +11,8 @@ import { Invite } from '../models/Invites';
 import { PasswordResetToken } from '../models/PasswordResetToken';
 import { generateVerificationToken, createVerificationUrl } from "../utils/emailVerification";
 import {EmailVerificationToken} from "../models/EmailVerificationToken";
+import { Shift } from "../models/Shift";
+import {notifyManagerWelcome} from "../services/notificationService";
 
 
 const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10');
@@ -67,6 +69,12 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                     organizationName: organizationName
                 },
             });
+            await notifyManagerWelcome(
+                savedUser.id.toString(),
+                normalizedEmail,
+                name,
+                organizationName
+            )
         } catch (emailErr) {
             console.error('Welcome email sending failed:', emailErr);
         }
@@ -425,7 +433,7 @@ export const resendVerificationEmail = async (req: Request, res: Response): Prom
 export const getAllStaffInOrg = async (req: Request, res: Response) => {
   try {
     const user = req.user;
-    
+
     // Add null check for req.user
     if (!user) {
       res.status(401).json({ message: 'Not authenticated' });
@@ -522,7 +530,7 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
         // Find user
         const user = await User.findById(resetToken.userId);
-        
+
         if (!user) {
             res.status(404).json({ message: 'User not found' });
             return;
@@ -656,6 +664,87 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 };
 
 
+export const deleteStaff = async(req: Request, res: Response): Promise<void> => {
+    try {
+        const managerId = req.user?.id;
+        const managerRole = req.user?.role;
+
+        if (!managerId || managerRole !== 'manager') {
+            res.status(401).json({ message: "Unauthorized - only managers can delete staff" });
+            return;
+        }
+
+        const staffId = req.params.id;
+        if (!staffId) {
+            res.status(400).json({ message: "Staff ID is required" });
+            return;
+        }
+
+        const staffMember = await Staff.findById(staffId);
+        if (!staffMember) {
+            res.status(404).json({ message: "Staff member not found" });
+            return;
+        }
+
+        // Verify that staff belongs to the manager's organization
+        if (staffMember.organizationId.toString() !== req.user?.organizationId) {
+            res.status(403).json({ message: "You can only delete staff from your organization" });
+            return;
+        }
+
+        // Verify this manager manages the staff member
+        if (staffMember.managerId.toString() !== managerId) {
+            res.status(403).json({ message: "You can only delete staff you manage" });
+            return;
+        }
+
+        // Delete all associated data
+
+        // 1. Delete all shifts assigned to this staff member
+        await Shift.deleteMany({ assignedTo: staffId });
+
+        // 2. Delete any pending invites for this email
+        await Invite.deleteMany({ email: staffMember.email });
+        await InviteToken.deleteMany({ email: staffMember.email });
+
+        // 3. Delete any password reset tokens
+        await PasswordResetToken.deleteMany({ userId: staffId });
+
+        // 4. Delete any email verification tokens
+        await EmailVerificationToken.deleteMany({ userId: staffId });
+
+        // 5. Send deletion notification email (before actually deleting)
+        try {
+            const org = await Organization.findById(staffMember.organizationId);
+            await sendEmail({
+                to: staffMember.email,
+                subject: 'Account Deletion Notice - Hwil',
+                template: 'account_deleted',
+                context: {
+                    username: staffMember.name,
+                    organizationName: org?.name || 'Hwil'
+                },
+            });
+        } catch (emailErr) {
+            console.error('Failed to send account deletion email:', emailErr);
+            // Don't fail the deletion if email fails
+        }
+
+        // 6. Finally, delete the staff member
+        await Staff.findByIdAndDelete(staffId);
+
+        // Send success response AFTER everything is deleted
+        res.status(200).json({
+            message: "Staff member deleted successfully",
+            deletedStaffId: staffId,
+            deletedStaffName: staffMember.name
+        });
+
+    } catch (error) {
+        console.error('Error deleting staff member:', error);
+        res.status(500).json({ message: 'Error while deleting staff member' });
+    }
+};
 
 
 

@@ -6,7 +6,7 @@ import { Shift } from '../models/Shift';
 import {sendEmail} from "../utils/email";
 import {Types} from "mongoose";
 import moment from 'moment-timezone';
-
+import {notifyStaffOfMultipleShifts, notifyStaffOfShiftAssignment} from "../services/notificationService";
 
 
 export const createShift = async (req: Request, res: Response, next: NextFunction) => {
@@ -25,9 +25,16 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
             return;
         }
 
-        // Validate assignedTo is provided for non-open shifts
         if (!assignedTo) {
             res.status(400).json({ message: 'Staff member must be assigned to shift' });
+            return;
+        }
+
+        // First find the staff member to get their email
+        console.log('Assigned Staff ID from request:', assignedTo);
+        const staffMember = await Staff.findById(assignedTo)
+        if (!staffMember) {
+            res.status(404).json({ message: 'Staff member not found', assignedTo });
             return;
         }
 
@@ -45,35 +52,47 @@ export const createShift = async (req: Request, res: Response, next: NextFunctio
             createdBy: user.id,
         });
 
-        const staff = await Staff.findById(assignedTo);
-        if (staff && staff.email) {
-            try {
-                await sendEmail({
-                    to: staff.email,
-                    subject: 'New Shift Assigned to You',
-                    template: 'shift_schedule_created',
-                    context: {
-                        username: staff.name,
-                        shifts: [{
-                            date: shift.date.toDateString(),
-                            startTime: shift.startTime,
-                            endTime: shift.endTime,
-                            location: shift.location,
-                            notes: shift.notes
-                        }],
-                        totalShifts: 1
-                    },
-                });
-            } catch (emailErr) {
-                console.error('Failed to send shift notification email:', emailErr);
-            }
+        try {
+            await notifyStaffOfShiftAssignment(
+                staffMember.id.toString(),
+                staffMember.email,
+                staffMember.name,
+                shift.id.toString(),
+                {
+                    date: shift.date.toDateString(),
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                    location: shift.location,
+                    notes: shift.notes
+                }
+            );
+
+            await sendEmail({
+                to: staffMember.email,
+                subject: 'New Shift Assigned to You',
+                template: 'shift_schedule_created',
+                context: {
+                    username: staffMember.name,
+                    shifts: [{
+                        date: shift.date.toDateString(),
+                        startTime: shift.startTime,
+                        endTime: shift.endTime,
+                        location: shift.location,
+                        notes: shift.notes
+                    }],
+                    totalShifts: 1
+                },
+            });
+
+        } catch (emailErr) {
+            console.error('Failed to send shift notification email:', emailErr);
         }
 
         res.status(201).json({
             message: 'Shift created successfully',
             shift: {
                 ...shift.toObject(),
-                notificationSent: !!staff?.email
+                notificationSent: !!staffMember?.email
             }
         });
     } catch (error) {
@@ -129,7 +148,7 @@ export const createBulkShifts = async (req: Request, res: Response, next: NextFu
 
             createdShifts.push(shift);
 
-            // Group shifts by staff member for email notification
+            // Group shifts by staff member for notification
             if (!shiftsByStaff.has(assignedTo)) {
                 shiftsByStaff.set(assignedTo, []);
             }
@@ -142,37 +161,49 @@ export const createBulkShifts = async (req: Request, res: Response, next: NextFu
             });
         }
 
-        // Send email notifications to each staff member
-        const emailPromises = [];
+        // Send notifications to each staff member using notification service
+        const notificationPromises = [];
+        const staffList = [];
+
         for (const [staffId, staffShifts] of shiftsByStaff) {
             const staff = await Staff.findById(staffId);
             if (staff && staff.email) {
-                emailPromises.push(
-                    sendEmail({
-                        to: staff.email,
-                        subject: `${staffShifts.length} New Shifts Assigned to You`,
-                        template: 'shift_schedule_created',
-                        context: {
-                            username: staff.name,
-                            shifts: staffShifts.sort((a, b) =>
-                                new Date(a.date).getTime() - new Date(b.date).getTime()
-                            ),
-                            totalShifts: staffShifts.length
-                        },
-                    }).catch(err => {
-                        console.error(`Failed to send email to ${staff.email}:`, err);
+                // Prepare data for batch notification
+                staffList.push({
+                    staffId: staff.id.toString(),
+                    staffEmail: staff.email,
+                    staffName: staff.name,
+                    shifts: staffShifts.sort((a, b) =>
+                        new Date(a.date).getTime() - new Date(b.date).getTime()
+                    )
+                });
+
+                // Individual notification for each staff member
+                notificationPromises.push(
+                    notifyStaffOfMultipleShifts(
+                        staff.id.toString(),
+                        staff.email,
+                        staff.name,
+                        staffShifts.sort((a, b) =>
+                            new Date(a.date).getTime() - new Date(b.date).getTime()
+                        )
+                    ).catch(err => {
+                        console.error(`Failed to send notification to ${staff.email}:`, err);
                     })
                 );
             }
         }
 
-        // Wait for all emails to be sent
-        await Promise.all(emailPromises);
+        // Alternative: Use batch notification function
+        // await notifyMultipleStaffOfShifts(staffList);
+
+        // Wait for all notifications to be sent
+        await Promise.all(notificationPromises);
 
         res.status(201).json({
             message: `${createdShifts.length} shifts created successfully`,
             shifts: createdShifts,
-            notificationsSent: emailPromises.length
+            notificationsSent: notificationPromises.length
         });
     } catch (error) {
         console.error('Error creating bulk shifts:', error);
@@ -182,6 +213,7 @@ export const createBulkShifts = async (req: Request, res: Response, next: NextFu
         });
     }
 };
+
 
 export const getShifts = async (req: Request, res: Response, next: NextFunction) => {
     try {

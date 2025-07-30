@@ -4,9 +4,7 @@ import { Invite } from '../models/Invites';
 import { InviteToken } from '../models/InviteToken';
 import { sendEmail } from '../utils/email';
 import { Organization } from '../models/Organization';
-import {User} from "../models/User";
-import {PasswordResetToken} from "../models/PasswordResetToken";
-import {Staff} from "../models/Staff";
+
 
 export const sendInvite = async (req: Request, res: Response): Promise<void> => {
     try {
